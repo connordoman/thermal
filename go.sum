@@ -30,8 +30,8 @@ github.com/clipperhouse/uax29/v2 v2.7.0 h1:+gs4oBZ2gPfVrKPthwbMzWZDaAFPGYK72F0NJ
 github.com/clipperhouse/uax29/v2 v2.7.0/go.mod h1:EFJ2TJMRUaplDxHKj1qAEhCtQPW2tJSwu5BF98AuoVM=
 github.com/cloudwego/base64x v0.1.6 h1:t11wG9AECkCDk5fMSoxmufanudBtJ+/HemLstXDLI2M=
 github.com/cloudwego/base64x v0.1.6/go.mod h1:OFcloc187FXDaYHvrNIjxSe8ncn0OOM8gEHfghB2IPU=
-github.com/connordoman/escpos v0.2.0 h1:LrOHBsn++aEcLENA6kRGqnPKrLsEZvayo+CWwPqgZt4=
-github.com/connordoman/escpos v0.2.0/go.mod h1:kEXYGsobInYlUNtUJRy4+Vm5KKpZG64uNI1PcmBBqPE=
+github.com/connordoman/escpos v0.3.0 h1:AhZnd9Tutz1e6eoOqoF2m4E0xb8MGhvoxH4XIb4lWA8=
+github.com/connordoman/escpos v0.3.0/go.mod h1:kEXYGsobInYlUNtUJRy4+Vm5KKpZG64uNI1PcmBBqPE=
 github.com/connordoman/windy v1.0.0 h1:pvB+nIOuE8hRzEhoYbeDw1jb12OGxCMl1Gd+S2bXixk=
 github.com/connordoman/windy v1.0.0/go.mod h1:xO1pQNmOhW8b9JlI8HcRdJKBeWy0hQpERpCuvy3R1fM=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
