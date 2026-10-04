@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/connordoman/escpos/css"
 	"github.com/connordoman/thermal/internal/auth"
 	"github.com/connordoman/thermal/internal/console"
 	"github.com/connordoman/thermal/internal/device"
@@ -28,6 +29,8 @@ type Server struct {
 	Images       *render.ImageLoader
 	MaxBodyBytes int64
 	Debug        bool
+	// CutFeed is the paper, in dots, fed past the last line before a cut.
+	CutFeed uint8
 }
 
 // Handler returns the HTTP handler.
@@ -55,12 +58,15 @@ func (s *Server) Handler() http.Handler {
 	r.GET("/v1/schema/job.json", func(c *gin.Context) {
 		c.Data(http.StatusOK, "application/schema+json", render.SchemaJSON)
 	})
+	// Renders HTML like the printer, for previews of styled jobs.
+	r.GET("/escpos.css", func(c *gin.Context) {
+		c.Data(http.StatusOK, "text/css; charset=utf-8", css.Stylesheet)
+	})
 
 	v1 := r.Group("/v1", s.authenticate)
 	v1.GET("/whoami", s.whoami)
 
 	print := v1.Group("/print", require(auth.ScopePrint))
-	print.POST("/raw", s.printRaw)
 	print.POST("/text", s.printText)
 	print.POST("/markdown", s.printMarkdown)
 	print.POST("/utf8", s.printUnicode)
@@ -80,6 +86,9 @@ func (s *Server) Handler() http.Handler {
 	jobs.POST("/:id/retry", s.retryJob)
 
 	admin := v1.Group("", require(auth.ScopeAdmin))
+	// Raw bytes can do anything the printer can, including reconfiguring
+	// it, so they need an admin key.
+	admin.POST("/print/raw", s.printRaw)
 	admin.GET("/keys", s.listKeys)
 	admin.POST("/keys", s.createKey)
 	admin.GET("/keys/:id", s.getKey)
@@ -96,6 +105,7 @@ func (s *Server) index(c *gin.Context) {
 		"version": Version,
 		"auth":    "send an API key as 'Authorization: Bearer thm_...' or 'X-API-Key: thm_...'",
 		"schema":  "/v1/schema/job.json",
+		"css":     "/escpos.css",
 		"endpoints": []string{
 			"POST /v1/print/raw", "POST /v1/print/text", "POST /v1/print/markdown",
 			"POST /v1/print/utf8", "POST /v1/print/json",

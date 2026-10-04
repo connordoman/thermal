@@ -113,6 +113,7 @@ func main() {
 		Images:       render.NewImageLoader(cfg.Server.ImageAllowPrivateHosts, cfg.Server.ImageMaxBytes, cfg.Server.ImageTimeout),
 		MaxBodyBytes: cfg.Server.MaxBodyBytes,
 		Debug:        cfg.Server.Debug,
+		CutFeed:      cfg.Server.CutFeed,
 	}
 	httpServer := &http.Server{
 		Addr:              cfg.Server.Addr,

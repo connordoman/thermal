@@ -11,6 +11,7 @@ const (
 	EnvThermalMaxBody  = "THERMAL_MAX_BODY"  // request body limit in bytes, default 16 MiB
 	EnvThermalRetain   = "THERMAL_RETENTION" // how long job bodies are kept, default 720h; 0 keeps them forever
 	EnvThermalDebug    = "THERMAL_DEBUG"     // verbose logging and Gin debug mode
+	EnvThermalCutFeed  = "THERMAL_CUT_FEED"  // dots fed past the cut position before cutting, default 96 (12 mm)
 	EnvImageAllowLocal = "THERMAL_IMAGE_ALLOW_PRIVATE_HOSTS"
 	EnvImageMaxBytes   = "THERMAL_IMAGE_MAX_BYTES"
 	EnvImageTimeout    = "THERMAL_IMAGE_TIMEOUT"
@@ -22,6 +23,9 @@ type ServerConfig struct {
 	MaxBodyBytes int64
 	Retention    time.Duration
 	Debug        bool
+	// CutFeed is the paper, in dots, fed past the last line before a cut,
+	// unless a request sets its own.
+	CutFeed uint8
 
 	// Images fetched by URL for markdown and JSON jobs.
 	ImageAllowPrivateHosts bool
@@ -49,6 +53,12 @@ func (s *ServerConfig) Load() error {
 	add(err)
 	s.Debug, err = envBool(EnvThermalDebug, false)
 	add(err)
+	feed, err := envInt(EnvThermalCutFeed, 120)
+	add(err)
+	if feed < 0 || feed > 255 {
+		add(configError(EnvThermalCutFeed, "must be 0–255 dots"))
+	}
+	s.CutFeed = uint8(min(max(feed, 0), 255))
 	s.ImageAllowPrivateHosts, err = envBool(EnvImageAllowLocal, false)
 	add(err)
 	s.ImageMaxBytes, err = envInt(EnvImageMaxBytes, 10<<20)

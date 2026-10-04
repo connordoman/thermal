@@ -115,3 +115,61 @@ func TestNestingLimit(t *testing.T) {
 		t.Fatalf("got %v, want a block error", err)
 	}
 }
+
+func renderJSON(t *testing.T, env *Env, body string) (string, error) {
+	t.Helper()
+	doc, err := ParseDocument([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := RenderDocument(context.Background(), env, doc)
+	return escpostest.Describe(out), err
+}
+
+func TestCSSStyles(t *testing.T) {
+	d, err := renderJSON(t, NewEnv(576, nil), `[
+		{"type": "group", "style": {"lineHeight": 1.5, "marginLeft": 48, "textAlign": "center"}, "blocks": [
+			{"type": "text", "content": "inside", "style": {"fontWeight": 700, "fontSize": 48, "textTransform": "uppercase"}}
+		]},
+		{"type": "text", "content": "after"}
+	]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"<ESC 3 36><GS L 48 0><GS W 16 2>", // line height and margins for the group
+		"<ESC a 1><ESC E 1><GS ! 17>INSIDE",
+		"<GS L 0 0><GS W 64 2><ESC 2>", // restored afterwards
+	} {
+		if !strings.Contains(d, want) {
+			t.Errorf("output lacks %q:\n%s", want, d)
+		}
+	}
+}
+
+func TestCSSErrors(t *testing.T) {
+	_, err := renderJSON(t, NewEnv(576, nil), `[{"type":"text","content":"x"},{"type":"text","content":"x","style":{"color":"red"}}]`)
+	var be *BlockError
+	if !errors.As(err, &be) || be.Path != "/blocks/1" || !strings.Contains(err.Error(), "color") {
+		t.Errorf("got %v", err)
+	}
+	if _, err := ParseDocument([]byte(`[{"type":"text","content":"x","style":{"bold":true}}]`)); err == nil {
+		t.Error("old-style property accepted")
+	}
+}
+
+func TestDefaultCutFeed(t *testing.T) {
+	env := NewEnv(576, nil)
+	env.CutFeed = 48
+	for body, want := range map[string]string{
+		`[{"type":"text","content":"x"}]`:                                     "<GS V 66 48>",
+		`{"options":{"feed":10},"blocks":[{"type":"text","content":"x"}]}`:    "<GS V 66 10>",
+		`[{"type":"text","content":"x"},{"type":"cut"}]`:                      "<GS V 66 48>",
+		`{"options":{"cut":"none"},"blocks":[{"type":"text","content":"x"}]}`: "x⏎\n",
+	} {
+		d, err := renderJSON(t, env, body)
+		if err != nil || !strings.HasSuffix(d, want) {
+			t.Errorf("%s: got %q, %v; want suffix %q", body, d, err, want)
+		}
+	}
+}

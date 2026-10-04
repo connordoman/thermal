@@ -211,7 +211,7 @@ func (s *Server) retryJob(c *gin.Context) {
 		return
 	}
 	q := &query{c: c}
-	o := q.jobOptions()
+	o := q.jobOptions(s.CutFeed)
 	if q.err != nil {
 		renderError(c, q.err)
 		return

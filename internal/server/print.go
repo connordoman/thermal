@@ -31,7 +31,7 @@ const maxWait = 5 * time.Minute
 // jobOptions are the query parameters every print endpoint accepts.
 type jobOptions struct {
 	finish   render.Finish
-	cutSet   bool
+	feedSet  bool
 	copies   int
 	priority int
 	label    string
@@ -119,16 +119,21 @@ func (q *query) align(name string) escpos.Align {
 	}
 }
 
-func (q *query) jobOptions() jobOptions {
+// jobOptions parses the shared query parameters. A cut feeds defaultFeed
+// dots past the last line unless the request gives its own feed.
+func (q *query) jobOptions(defaultFeed uint8) jobOptions {
 	var o jobOptions
 	cut, err := render.ParseCutMode(q.str("cut", ""))
 	if err != nil {
 		q.fail("cut", err.Error())
 	}
-	o.cutSet = q.has("cut")
+	o.feedSet = q.has("feed")
+	if cut == render.CutNone {
+		defaultFeed = 0
+	}
 	o.finish = render.Finish{
 		Cut:        cut,
-		Feed:       uint8(q.int("feed", 0, 0, 255)),
+		Feed:       uint8(q.int("feed", int(defaultFeed), 0, 255)),
 		OpenDrawer: q.bool("open_drawer", false),
 		Beep:       q.bool("beep", false),
 	}
@@ -207,7 +212,9 @@ func blockPath(err error) any {
 }
 
 func (s *Server) env() *render.Env {
-	return render.NewEnv(s.Device.PaperWidth(), s.Images)
+	env := render.NewEnv(s.Device.PaperWidth(), s.Images)
+	env.CutFeed = s.CutFeed
+	return env
 }
 
 // renderTimeout bounds rendering, which may fetch images.
@@ -287,7 +294,7 @@ func truncate(s string, n int) string {
 
 func (s *Server) printRaw(c *gin.Context) {
 	q := &query{c: c}
-	o := q.jobOptions()
+	o := q.jobOptions(s.CutFeed)
 	if q.err != nil {
 		renderError(c, q.err)
 		return
@@ -296,23 +303,47 @@ func (s *Server) printRaw(c *gin.Context) {
 	if !ok {
 		return
 	}
-	payload := body
-	// Raw bytes go out untouched unless a cut was asked for explicitly.
-	if o.cutSet || o.finish.OpenDrawer || o.finish.Beep || o.finish.Feed > 0 {
-		b := escpos.NewBuilder(s.Device.PaperWidth())
-		b.Raw(body...)
-		if !o.cutSet {
-			o.finish.Cut = render.CutNone
-		}
-		o.finish.Apply(b)
-		payload = b.Bytes()
+	s.submit(c, "raw", o, body, finishRaw(s.Device.PaperWidth(), body, o.finish))
+}
+
+// finishRaw ends raw bytes like every other job: it prints any text left in
+// the buffer and cuts, unless the bytes already end with a cut or the
+// request says cut=none. Everything sent is otherwise left alone.
+func finishRaw(paperWidth int, body []byte, f render.Finish) []byte {
+	if endsWithCut(body) {
+		f.Cut, f.Feed = render.CutNone, 0
 	}
-	s.submit(c, "raw", o, body, payload)
+	if f.Cut == render.CutNone && f.Feed == 0 && !f.OpenDrawer && !f.Beep {
+		return body
+	}
+	b := escpos.NewBuilder(paperWidth)
+	b.Raw(body...)
+	if f.Cut != render.CutNone && len(body) > 0 && body[len(body)-1] != '\n' {
+		b.LineFeed() // print the unfinished line before feeding
+	}
+	f.Apply(b)
+	return b.Bytes()
+}
+
+// endsWithCut reports whether data's last command, ignoring trailing line
+// feeds, is a cut (GS V, ESC i or ESC m).
+func endsWithCut(data []byte) bool {
+	d := bytes.TrimRight(data, "\n\r\x00")
+	n := len(d)
+	switch {
+	case n >= 4 && d[n-4] == escpos.GS && d[n-3] == 'V' && (d[n-2] == 65 || d[n-2] == 66):
+		return true
+	case n >= 3 && d[n-3] == escpos.GS && d[n-2] == 'V' && (d[n-1] <= 1 || d[n-1] == 48 || d[n-1] == 49):
+		return true
+	case n >= 2 && d[n-2] == escpos.ESC && (d[n-1] == 'i' || d[n-1] == 'm'):
+		return true
+	}
+	return false
 }
 
 func (s *Server) printText(c *gin.Context) {
 	q := &query{c: c}
-	o := q.jobOptions()
+	o := q.jobOptions(s.CutFeed)
 	size := uint8(q.int("size", 1, 1, 8))
 	to := render.TextOptions{
 		Style: layout.Style{
@@ -347,7 +378,7 @@ func (s *Server) printText(c *gin.Context) {
 
 func (s *Server) printMarkdown(c *gin.Context) {
 	q := &query{c: c}
-	o := q.jobOptions()
+	o := q.jobOptions(s.CutFeed)
 	mo := render.MarkdownOptions{
 		Links:   render.LinkMode(q.str("links", "inline")),
 		Unicode: render.UnicodeMode(q.str("unicode", "image")),
@@ -383,7 +414,7 @@ func (s *Server) printMarkdown(c *gin.Context) {
 
 func (s *Server) printUnicode(c *gin.Context) {
 	q := &query{c: c}
-	o := q.jobOptions()
+	o := q.jobOptions(s.CutFeed)
 	uo := unifont.Options{
 		Scale:  q.float("scale", 2, 1, 8),
 		Bold:   q.bool("bold", false),
@@ -434,7 +465,7 @@ func (s *Server) printUnicode(c *gin.Context) {
 
 func (s *Server) printJSON(c *gin.Context) {
 	q := &query{c: c}
-	o := q.jobOptions()
+	o := q.jobOptions(s.CutFeed)
 	if q.err != nil {
 		renderError(c, q.err)
 		return
@@ -460,6 +491,9 @@ func (s *Server) printJSON(c *gin.Context) {
 	}
 	if q.has("cut") {
 		doc.Options.Cut = string(o.finish.Cut)
+	}
+	if o.feedSet {
+		doc.Options.Feed = &o.finish.Feed
 	}
 	ctx, cancel := context.WithTimeout(c, renderTimeout)
 	defer cancel()

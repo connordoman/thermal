@@ -58,6 +58,7 @@ Settings come from the environment, or a `.env` file in the working directory.
 | `THERMAL_IMAGE_MAX_BYTES`               | `10485760`   | Largest image that will be downloaded or decoded                                            |
 | `THERMAL_IMAGE_TIMEOUT`                 | `10s`        | Time limit for downloading one image                                                        |
 | `THERMAL_DEBUG`                         | `false`      | Debug logging and Gin debug mode                                                            |
+| `THERMAL_CUT_FEED` | `96` | Dots of paper (8 per mm, so 12 mm by default) fed past the last line before each cut. The cutter sits about 2 cm above the print head, so jobs also start with that much blank paper; the printer cannot feed backwards to save it |
 
 `ESCPOS_CONNECTION` is an [`escpos.Open`](https://github.com/connordoman/escpos#connection-strings-and-reconnecting) connection string:
 
@@ -92,9 +93,9 @@ A key is `thm_` + an 8-character public ID + a 32-character secret. The ID appea
 
 | Scope   | Allows                                                   |
 | ------- | -------------------------------------------------------- |
-| `print` | Submitting, cancelling and retrying jobs                 |
+| `print` | Submitting (except raw bytes), cancelling and retrying jobs |
 | `read`  | Printer information, the queue and job records           |
-| `admin` | Everything, plus managing keys and reading the audit log |
+| `admin` | Everything, plus raw byte jobs, managing keys and reading the audit log |
 
 | Endpoint                              |                                                                                                                                      |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
@@ -115,7 +116,7 @@ Every print endpoint takes the body as-is (no form encoding) and these query par
 | Parameter             | Default   |                                                                                     |
 | --------------------- | --------- | ----------------------------------------------------------------------------------- |
 | `cut`                 | `partial` | `none`, `partial` or `full` (the RP326 always cuts partially)                       |
-| `feed`                | `0`       | Extra dots of paper fed before the cut (8 dots = 1 mm)                              |
+| `feed` | `96` | Dots of paper fed past the last line before the cut (8 dots = 1 mm; default from `THERMAL_CUT_FEED`, 0 with `cut=none`) |
 | `copies`              | `1`       | 1–20                                                                                |
 | `priority`            | `0`       | −100 to 100; higher prints first                                                    |
 | `label`               |           | Shown in the job list                                                               |
@@ -131,7 +132,9 @@ Plain text, transliterated to ASCII ("Café — “naïve”" prints as `Cafe - 
 
 ### `POST /v1/print/raw`
 
-Bytes sent to the printer untouched. Nothing is added unless you ask for `cut`, `feed`, `open_drawer` or `beep`.
+Bytes sent to the printer as they are, with an **admin** key: raw commands can do anything the printer can, including reconfiguring it.
+
+Like every other job, it ends with the unfinished line printed, a feed and a cut. The exceptions: nothing is added if the bytes already end with a cut (`GS V`, `ESC i` or `ESC m`), and `cut=none` sends them untouched apart from any `open_drawer` or `beep`.
 
 ### `POST /v1/print/markdown`
 
@@ -214,7 +217,34 @@ See [`examples/receipt.json`](examples/receipt.json) for a receipt and [`example
 | `code_page`, `charset`, `line_spacing`, `margins` | Printer settings for the blocks that follow                                                 |
 | `initialize`, `self_test`, `raw`                  | Printer reset, self-test page, raw bytes in hex or base64                                   |
 
-Styles (`style`, `key_style`, ...) take `bold`, `underline` (`true` or 0–2), `double_strike`, `invert`, `font` (`A`/`B`), `size`, `width`, `height` (1–8) and `upside_down`. Text blocks containing characters the printer lacks are drawn with Unifont unless `options.unicode` is `transliterate`.
+#### Styles
+
+`style`, `key_style`, `value_style` and `header_style` take CSS properties written like React's `CSSProperties` ([`escpos/css`](https://github.com/connordoman/escpos/tree/main/css)): camelCase names, and numbers mean pixels for lengths. A pixel is a printer dot.
+
+```json
+{ "type": "text", "content": "Total", "style": { "fontWeight": "bold", "fontSize": 48, "textAlign": "right" } }
+```
+
+| Property | Printed as |
+|---|---|
+| `fontFamily` | `"Font A"` (12×24 dots) or `"Font B"` (9×17) |
+| `fontSize` | 24px is normal, 48px double, up to 192px (×8); `em`, `rem` and `%` work |
+| `fontWeight` | `bold` or 600+ is bold; 800+ adds double-strike |
+| `textDecoration` | `underline`, `underline double` (2-dot line) or `none`; also `textDecorationLine`, `textDecorationStyle`, `textDecorationThickness` |
+| `textAlign` | `left`, `center`, `right` |
+| `backgroundColor` / `color` | `black` background with `white` text prints inverted |
+| `lineHeight` | `normal` (30 dots), a multiple such as `1.5`, or `"40px"` |
+| `letterSpacing` | Extra dots after each character |
+| `textTransform` | `uppercase`, `lowercase`, `capitalize` |
+| `whiteSpace` | `nowrap` or `pre` turns word wrapping off |
+| `transform` | `scale(2, 1)`, `scaleX()`, `scaleY()` for unequal width and height; `rotate(90deg)`, `rotate(180deg)` |
+| `marginLeft`, `width` | The block's left margin and printable width (GS L, GS W) |
+
+Inside a `group`, children inherit the group's style as in CSS, and its `lineHeight` and margins apply while they print. A block's `align` field, where it has one, overrides `textAlign`. Values a printer cannot reproduce, such as `color: red` or `rotate(45deg)`, are rejected with the block's path.
+
+Because the properties keep their CSS meaning, the same style objects render in a browser: put the content in an element with class `escpos` and load [`/escpos.css`](https://github.com/connordoman/escpos/blob/main/css/escpos.css). The stylesheet reproduces the printer's default state with fonts sized to its character cells, so line breaks and alignment match the receipt.
+
+Text blocks containing characters the printer lacks are drawn with Unifont unless `options.unicode` is `transliterate`.
 
 ### Images
 

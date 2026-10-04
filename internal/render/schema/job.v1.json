@@ -21,61 +21,182 @@
     },
     "style": {
       "type": "object",
+      "additionalProperties": false,
+      "description": "Character and block style as CSS properties, written like React's CSSProperties (camelCase names; numbers mean px for lengths). The same object renders in a browser on top of escpos.css (served at /escpos.css), at one CSS pixel per printer dot. Inside a group, inherited properties come from the group, as in CSS. Values a thermal printer cannot reproduce are rejected when the job is rendered.",
       "properties": {
-        "bold": {
-          "type": "boolean"
+        "fontFamily": {
+          "type": "string",
+          "description": "\"Font A\" (12×24 dots, 48 columns on 80 mm) or \"Font B\" (9×17, 64 columns). A list such as \"Font B, monospace\" is accepted.",
+          "examples": [
+            "Font A",
+            "Font B"
+          ]
         },
-        "underline": {
-          "oneOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 2
-            }
+        "fontSize": {
+          "type": [
+            "string",
+            "number"
           ],
-          "description": "true or 1 for a 1-dot line, 2 for 2 dots."
+          "description": "Character size: 24px is normal and 48px double, up to 192px (×8); em, rem and % work too.",
+          "examples": [
+            24,
+            48,
+            "2em"
+          ]
         },
-        "double_strike": {
-          "type": "boolean"
+        "fontWeight": {
+          "type": [
+            "string",
+            "number"
+          ],
+          "description": "normal, bold, bolder, lighter or 1–1000. 600 and up prints bold; 800 and up adds double-strike.",
+          "examples": [
+            "bold",
+            700
+          ]
         },
-        "invert": {
-          "type": "boolean",
-          "description": "White on black."
+        "textDecoration": {
+          "type": "string",
+          "description": "underline or none, optionally with double (a 2-dot line) or a thickness of 1px or 2px.",
+          "examples": [
+            "underline",
+            "underline double",
+            "none"
+          ]
         },
-        "font": {
+        "textDecorationLine": {
+          "type": "string",
+          "description": "underline or none.",
           "enum": [
-            "A",
-            "B"
-          ],
-          "description": "A is 12×24 dots (48 columns on 80 mm), B is 9×17 (64 columns)."
+            "underline",
+            "none"
+          ]
         },
-        "size": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 8,
-          "description": "Sets width and height together."
+        "textDecorationStyle": {
+          "type": "string",
+          "description": "solid (1-dot line) or double (2-dot line).",
+          "enum": [
+            "solid",
+            "double"
+          ]
+        },
+        "textDecorationThickness": {
+          "type": [
+            "string",
+            "number"
+          ],
+          "description": "1px or 2px.",
+          "examples": [
+            1,
+            "2px"
+          ]
+        },
+        "textAlign": {
+          "type": "string",
+          "description": "Line justification.",
+          "enum": [
+            "left",
+            "center",
+            "right",
+            "start",
+            "end"
+          ]
+        },
+        "color": {
+          "type": "string",
+          "description": "black, or white with a black background. Thermal printers print one colour.",
+          "examples": [
+            "black",
+            "white",
+            "#000",
+            "#fff"
+          ]
+        },
+        "backgroundColor": {
+          "type": "string",
+          "description": "black prints white-on-black (inverted) text; white or transparent is normal.",
+          "examples": [
+            "black",
+            "white",
+            "transparent"
+          ]
+        },
+        "lineHeight": {
+          "type": [
+            "string",
+            "number"
+          ],
+          "description": "Line spacing: normal (30 dots), a multiple of the font size such as 1.5, or a length such as \"40px\".",
+          "examples": [
+            "normal",
+            1.5,
+            "40px"
+          ]
+        },
+        "letterSpacing": {
+          "type": [
+            "string",
+            "number"
+          ],
+          "description": "Extra space after each character in px (ESC SP).",
+          "examples": [
+            2,
+            "4px"
+          ]
+        },
+        "textTransform": {
+          "type": "string",
+          "description": "Changes the case of the text before printing.",
+          "enum": [
+            "none",
+            "uppercase",
+            "lowercase",
+            "capitalize"
+          ]
+        },
+        "whiteSpace": {
+          "type": "string",
+          "description": "nowrap and pre turn word wrapping off; the printer then breaks lines wherever they fill.",
+          "enum": [
+            "normal",
+            "nowrap",
+            "pre",
+            "pre-wrap",
+            "pre-line",
+            "break-spaces"
+          ]
+        },
+        "transform": {
+          "type": "string",
+          "description": "scale(x[, y]), scaleX() and scaleY() set width and height multipliers relative to fontSize; rotate() turns characters by 90deg, 180deg or 270deg.",
+          "examples": [
+            "scale(2, 1)",
+            "scaleY(3)",
+            "rotate(180deg)"
+          ]
+        },
+        "marginLeft": {
+          "type": [
+            "string",
+            "number"
+          ],
+          "description": "Left margin of the block in px (GS L). Not inherited, but applies to everything inside a group.",
+          "examples": [
+            48
+          ]
         },
         "width": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 8,
-          "description": "Character width multiplier."
-        },
-        "height": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 8,
-          "description": "Character height multiplier."
-        },
-        "upside_down": {
-          "type": "boolean"
+          "type": [
+            "string",
+            "number"
+          ],
+          "description": "Printable width of the block in px (GS W), or auto.",
+          "examples": [
+            384,
+            "auto"
+          ]
         }
-      },
-      "additionalProperties": false,
-      "description": "Character style. Inside a group, unset fields inherit the group's style."
+      }
     },
     "blocks": {
       "type": "array",
@@ -595,8 +716,7 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 255,
-          "description": "Extra dots fed before the cut.",
-          "default": 0
+          "description": "Dots of paper fed past the last line before the cut (8 dots = 1 mm). Defaults to the server's THERMAL_CUT_FEED (96, i.e. 12 mm), or 0 when cut is none."
         },
         "copies": {
           "type": "integer",
@@ -1413,8 +1533,7 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 255,
-          "description": "Extra dots fed before cutting.",
-          "default": 0
+          "description": "Dots of paper fed past the last line before cutting; defaults to the server's THERMAL_CUT_FEED (96, i.e. 12 mm)."
         }
       },
       "additionalProperties": false,

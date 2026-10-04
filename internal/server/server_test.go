@@ -50,6 +50,7 @@ func newHarness(t *testing.T, conn string) *harness {
 		Store: db, Keys: keys, Device: dev, Queue: q,
 		Images:       render.NewImageLoader(false, 1<<20, time.Second),
 		MaxBodyBytes: 1 << 20,
+		CutFeed:      48,
 	}
 	h := &harness{t: t, srv: httptest.NewServer(s.Handler()), admin: admin}
 	t.Cleanup(h.srv.Close)
@@ -121,6 +122,9 @@ func TestAuthAndScopes(t *testing.T) {
 	if code, _, raw := h.do("GET", "/v1/schema/job.json", "", ""); code != http.StatusOK || !json.Valid(raw) {
 		t.Errorf("schema: got %d", code)
 	}
+	if code, _, raw := h.do("GET", "/escpos.css", "", ""); code != http.StatusOK || !strings.Contains(string(raw), ".escpos {") {
+		t.Errorf("escpos.css: got %d", code)
+	}
 }
 
 func TestPrintRoutes(t *testing.T) {
@@ -128,7 +132,6 @@ func TestPrintRoutes(t *testing.T) {
 	key := h.newKey("print", "read")
 	for _, tc := range []struct{ path, body string }{
 		{"/v1/print/text?wait=5s", "hello"},
-		{"/v1/print/raw?wait=5s", "\x1b@hi\n"},
 		{"/v1/print/markdown?wait=5s", "# Hi\n\n- a\n- b"},
 		{"/v1/print/utf8?wait=5s", "こんにちは 😀"},
 		{"/v1/print/json?wait=5s", `[{"type":"text","content":"hello, world"},{"type":"qr_code","content":"https://example.com"},{"type":"cut","content":"PARTIAL"}]`},
@@ -142,9 +145,9 @@ func TestPrintRoutes(t *testing.T) {
 	if code != http.StatusOK || len(m["jobs"].([]any)) != 2 || m["next"] == nil {
 		t.Errorf("listing jobs: %d %v", code, m)
 	}
-	code, _, raw := h.do("GET", "/v1/jobs/2/payload", key, "")
-	if code != http.StatusOK || string(raw) != "\x1b@hi\n" {
-		t.Errorf("raw payload: %d %q", code, raw)
+	code, _, raw := h.do("GET", "/v1/jobs/1/payload", key, "")
+	if code != http.StatusOK || !strings.HasSuffix(string(raw), "\x1dVB0") {
+		t.Errorf("text job does not feed 48 dots and cut: %d %q", code, raw)
 	}
 	code, _, raw = h.do("POST", "/v1/print/text?dry_run=true&cut=none", key, "x")
 	if code != http.StatusOK || string(raw) != "\x1b@x\n" {
@@ -153,6 +156,28 @@ func TestPrintRoutes(t *testing.T) {
 	code, m, _ = h.do("POST", "/v1/print/json", key, `{"blocks":[{"type":"barcode","symbology":"EAN13","content":"1"}]}`)
 	if code != http.StatusUnprocessableEntity || field(m, "error", "code") != "invalid_block" {
 		t.Errorf("bad barcode: %d %v", code, m)
+	}
+}
+
+func TestRawPrinting(t *testing.T) {
+	h := newHarness(t, "discard")
+	printer := h.newKey("print", "read")
+	if code, _, _ := h.do("POST", "/v1/print/raw", printer, "hi\n"); code != http.StatusForbidden {
+		t.Errorf("print key on /raw: got %d, want 403", code)
+	}
+	for _, tc := range []struct{ query, body, want string }{
+		{"", "\x1b@hi\n", "\x1b@hi\n\x1dVB0"},           // cut added
+		{"", "hi", "hi\n\x1dVB0"},                       // unfinished line printed first
+		{"", "hi\n\x1dVB\x10", "hi\n\x1dVB\x10"},        // already cut: untouched
+		{"", "hi\n\x1bi\n", "hi\n\x1bi\n"},              // legacy cut: untouched
+		{"?cut=none", "hi", "hi"},                       // opted out
+		{"?feed=0", "hi\n", "hi\n\x1dVB\x00"},           // own feed
+		{"?cut=none&beep", "hi\n", "hi\n\x1bB\x01\x02"}, // extras without a cut
+	} {
+		code, _, raw := h.do("POST", "/v1/print/raw?dry_run=1&"+strings.TrimPrefix(tc.query, "?"), h.admin, tc.body)
+		if code != http.StatusOK || string(raw) != tc.want {
+			t.Errorf("%q%s: got %d %q, want %q", tc.body, tc.query, code, raw, tc.want)
+		}
 	}
 }
 

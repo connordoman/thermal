@@ -18,6 +18,9 @@ type Env struct {
 	PaperWidth int
 	Images     *ImageLoader
 	Now        func() time.Time
+	// CutFeed is the paper, in dots, fed past the last line before a cut
+	// that does not give its own feed.
+	CutFeed uint8
 
 	images atomic.Int32
 }
@@ -60,7 +63,9 @@ func ParseCutMode(s string) (CutMode, error) {
 // Finish says what happens after a job's content.
 type Finish struct {
 	Cut CutMode
-	// Feed is extra paper, in dots, fed before cutting (0–255).
+	// Feed is extra paper, in dots, fed past the last line before cutting
+	// (0–255). The printer's cutter sits about 2 cm above the print head,
+	// so this is on top of the paper needed to reach the cutter.
 	Feed       uint8
 	OpenDrawer bool
 	Beep       bool

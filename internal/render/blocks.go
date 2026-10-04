@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/connordoman/escpos"
+	"github.com/connordoman/escpos/css"
 	"github.com/connordoman/escpos/layout"
 )
 
@@ -29,7 +30,7 @@ type Document struct {
 // DocumentOptions are a document's job-wide settings.
 type DocumentOptions struct {
 	Cut        string `json:"cut,omitempty"`
-	Feed       uint8  `json:"feed,omitempty"`
+	Feed       *uint8 `json:"feed,omitempty"`
 	Copies     int    `json:"copies,omitempty"`
 	Priority   int    `json:"priority,omitempty"`
 	OpenDrawer bool   `json:"open_drawer,omitempty"`
@@ -43,10 +44,18 @@ func (d *Document) Label() string {
 	return s
 }
 
-// Finish returns the document's cut and peripheral settings.
-func (d *Document) Finish() Finish {
+// Finish returns the document's cut and peripheral settings. Without a
+// feed of its own, a cut feeds defaultFeed dots first.
+func (d *Document) Finish(defaultFeed uint8) Finish {
 	cut, _ := ParseCutMode(d.Options.Cut)
-	return Finish{Cut: cut, Feed: d.Options.Feed, OpenDrawer: d.Options.OpenDrawer, Beep: d.Options.Beep}
+	feed := uint8(0)
+	if cut != CutNone {
+		feed = defaultFeed
+	}
+	if d.Options.Feed != nil {
+		feed = *d.Options.Feed
+	}
+	return Finish{Cut: cut, Feed: feed, OpenDrawer: d.Options.OpenDrawer, Beep: d.Options.Beep}
 }
 
 // ParseDocument validates body against the schema and decodes it. The body
@@ -83,10 +92,9 @@ const (
 	maxBlocks = 5000
 )
 
-// scope is the style and alignment inherited from enclosing groups.
+// scope is the computed style inherited from enclosing groups.
 type scope struct {
-	style layout.Style
-	align escpos.Align
+	css css.Computed
 }
 
 type docRenderer struct {
@@ -100,6 +108,60 @@ type docRenderer struct {
 	// lastCut records whether the last top-level block was a cut, so the
 	// document's own cut is not added after it.
 	lastCut bool
+	// marginLeft and width are the printer's current left margin and
+	// printable width in dots (GS L, GS W); width 0 means the rest of the
+	// paper.
+	marginLeft, width int
+}
+
+// resolve computes a block's style from its CSS and the inherited style.
+func (r *docRenderer) resolve(p *css.Properties, sc scope) (css.Computed, error) {
+	c, err := p.Resolve(sc.css)
+	if err != nil {
+		return c, fmt.Errorf("style: %w", err)
+	}
+	return c, nil
+}
+
+// around applies the block-level parts of c (lineHeight, marginLeft,
+// width) while fn prints, then restores parent's.
+func (r *docRenderer) around(c, parent css.Computed, fn func() error) error {
+	if c.LineHeight != parent.LineHeight {
+		setLineHeight(r.b, c.LineHeight)
+		defer setLineHeight(r.b, parent.LineHeight)
+	}
+	if c.MarginLeft > 0 || c.Width > 0 {
+		left, width := r.marginLeft, r.areaWidth()
+		w := width - c.MarginLeft
+		if c.Width > 0 {
+			w = min(c.Width, w)
+		}
+		r.setMargins(left+c.MarginLeft, max(w, 8))
+		defer r.setMargins(left, width)
+	}
+	return fn()
+}
+
+func (r *docRenderer) areaWidth() int {
+	if r.width > 0 {
+		return r.width
+	}
+	return r.env.PaperWidth - r.marginLeft
+}
+
+func (r *docRenderer) setMargins(left, width int) {
+	r.b.SetLeftMargin(uint16(left))
+	r.b.SetPrintAreaWidth(uint16(width))
+	r.marginLeft, r.width = left, width
+	r.w.Width = width
+}
+
+func setLineHeight(b *escpos.Builder, dots int) {
+	if dots == 0 {
+		b.DefaultLineSpacing()
+	} else {
+		b.SetLineSpacing(uint8(dots))
+	}
 }
 
 // RenderDocument renders a parsed block document.
@@ -113,7 +175,7 @@ func RenderDocument(ctx context.Context, env *Env, doc *Document) ([]byte, error
 		return nil, err
 	}
 	w.Apply(layout.Style{})
-	f := doc.Finish()
+	f := doc.Finish(env.CutFeed)
 	if r.lastCut {
 		f.Cut, f.Feed = CutNone, 0
 	}
@@ -146,68 +208,6 @@ func (r *docRenderer) blocks(raw []json.RawMessage, sc scope, path string, depth
 		r.w.Apply(layout.Style{})
 	}
 	return nil
-}
-
-// jsonStyle is a style in a document. Unset fields inherit.
-type jsonStyle struct {
-	Bold         *bool      `json:"bold"`
-	Underline    *underline `json:"underline"`
-	DoubleStrike *bool      `json:"double_strike"`
-	Invert       *bool      `json:"invert"`
-	Font         *string    `json:"font"`
-	Size         *uint8     `json:"size"`
-	Width        *uint8     `json:"width"`
-	Height       *uint8     `json:"height"`
-	UpsideDown   *bool      `json:"upside_down"`
-}
-
-type underline uint8
-
-func (u *underline) UnmarshalJSON(b []byte) error {
-	switch string(b) {
-	case "true":
-		*u = 1
-	case "false":
-		*u = 0
-	default:
-		n, err := strconv.ParseUint(string(b), 10, 8)
-		if err != nil || n > 2 {
-			return fmt.Errorf("underline must be a boolean or 0–2")
-		}
-		*u = underline(n)
-	}
-	return nil
-}
-
-func (j *jsonStyle) apply(s layout.Style) layout.Style {
-	if j == nil {
-		return s
-	}
-	set := func(dst *bool, src *bool) {
-		if src != nil {
-			*dst = *src
-		}
-	}
-	set(&s.Bold, j.Bold)
-	set(&s.DoubleStrike, j.DoubleStrike)
-	set(&s.Invert, j.Invert)
-	set(&s.UpsideDown, j.UpsideDown)
-	if j.Underline != nil {
-		s.Underline = uint8(*j.Underline)
-	}
-	if j.Font != nil {
-		s.FontB = strings.EqualFold(*j.Font, "B")
-	}
-	if j.Size != nil {
-		s.Width, s.Height = *j.Size, *j.Size
-	}
-	if j.Width != nil {
-		s.Width = *j.Width
-	}
-	if j.Height != nil {
-		s.Height = *j.Height
-	}
-	return s
 }
 
 func parseAlign(s *string, def escpos.Align) escpos.Align {
@@ -268,28 +268,38 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 			Type    string  `json:"type"`
 			Content *string `json:"content"`
 			Spans   []struct {
-				Content string     `json:"content"`
-				Style   *jsonStyle `json:"style"`
+				Content string          `json:"content"`
+				Style   *css.Properties `json:"style"`
 			} `json:"spans"`
-			Style *jsonStyle `json:"style"`
-			Align *string    `json:"align"`
-			Wrap  *bool      `json:"wrap"`
+			Style *css.Properties `json:"style"`
+			Align *string         `json:"align"`
+			Wrap  *bool           `json:"wrap"`
 		}
 		if err := decode(&v); err != nil {
 			return err
 		}
-		base := v.Style.apply(sc.style)
+		c, err := r.resolve(v.Style, sc)
+		if err != nil {
+			return err
+		}
 		var spans []layout.Span
 		if v.Content != nil {
-			spans = []layout.Span{{Text: *v.Content, Style: base}}
+			spans = []layout.Span{{Text: c.Text(Clean(*v.Content)), Style: c.Style}}
 		}
-		for _, s := range v.Spans {
-			spans = append(spans, layout.Span{Text: s.Content, Style: s.Style.apply(base)})
+		for i, s := range v.Spans {
+			sc, err := r.resolve(s.Style, scope{c})
+			if err != nil {
+				return fmt.Errorf("spans/%d: %w", i, err)
+			}
+			spans = append(spans, layout.Span{Text: sc.Text(Clean(s.Content)), Style: sc.Style})
 		}
-		for i := range spans {
-			spans[i].Text = Clean(spans[i].Text)
+		wrap := !c.NoWrap
+		if v.Wrap != nil {
+			wrap = *v.Wrap
 		}
-		return r.text(spans, "", "", parseAlign(v.Align, sc.align), v.Wrap == nil || *v.Wrap)
+		return r.around(c, sc.css, func() error {
+			return r.text(spans, "", "", parseAlign(v.Align, c.Align), wrap)
+		})
 
 	case "heading":
 		var v struct {
@@ -302,7 +312,7 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 			return err
 		}
 		st, _ := headingStyle(max(v.Level, 1))
-		return r.text([]layout.Span{{Text: Clean(v.Content), Style: st}}, "", "", parseAlign(v.Align, sc.align), true)
+		return r.text([]layout.Span{{Text: Clean(v.Content), Style: st}}, "", "", parseAlign(v.Align, sc.css.Align), true)
 
 	case "markdown":
 		var v struct {
@@ -344,7 +354,7 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 			return errors.New("unicode blocks are images, which do not print in page mode")
 		}
 		return unifont.Print(b, v.Content, unifont.Options{
-			Scale: v.Scale, Bold: v.Bold, Invert: v.Invert, Align: parseAlign(v.Align, sc.align),
+			Scale: v.Scale, Bold: v.Bold, Invert: v.Invert, Align: parseAlign(v.Align, sc.css.Align),
 			LineGap: v.LineGap, NoWrap: v.Wrap != nil && !*v.Wrap,
 			Weight: v.Weight, SolidEmoji: v.Solid,
 		})
@@ -367,9 +377,9 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 
 	case "rule":
 		var v struct {
-			Type  string     `json:"type"`
-			Char  string     `json:"char"`
-			Style *jsonStyle `json:"style"`
+			Type  string          `json:"type"`
+			Char  string          `json:"char"`
+			Style *css.Properties `json:"style"`
 		}
 		if err := decode(&v); err != nil {
 			return err
@@ -378,17 +388,21 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 		if v.Char != "" {
 			c = []rune(Clean(v.Char) + "-")[0]
 		}
+		st, err := r.resolve(v.Style, sc)
+		if err != nil {
+			return err
+		}
 		w.SetAlign(escpos.AlignLeft)
-		w.Rule(c, v.Style.apply(sc.style))
+		return r.around(st, sc.css, func() error { w.Rule(c, st.Style); return nil })
 
 	case "key_value":
 		var v struct {
-			Type       string     `json:"type"`
-			Key        string     `json:"key"`
-			Value      string     `json:"value"`
-			Leader     string     `json:"leader"`
-			KeyStyle   *jsonStyle `json:"key_style"`
-			ValueStyle *jsonStyle `json:"value_style"`
+			Type       string          `json:"type"`
+			Key        string          `json:"key"`
+			Value      string          `json:"value"`
+			Leader     string          `json:"leader"`
+			KeyStyle   *css.Properties `json:"key_style"`
+			ValueStyle *css.Properties `json:"value_style"`
 		}
 		if err := decode(&v); err != nil {
 			return err
@@ -397,8 +411,16 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 		if v.Leader != "" {
 			leader = []rune(Clean(v.Leader) + " ")[0]
 		}
+		ks, err := r.resolve(v.KeyStyle, sc)
+		if err != nil {
+			return fmt.Errorf("key_%w", err)
+		}
+		vs, err := r.resolve(v.ValueStyle, sc)
+		if err != nil {
+			return fmt.Errorf("value_%w", err)
+		}
 		w.SetAlign(escpos.AlignLeft)
-		w.KeyValue(Clean(v.Key), Clean(v.Value), leader, v.KeyStyle.apply(sc.style), v.ValueStyle.apply(sc.style))
+		w.KeyValue(ks.Text(Clean(v.Key)), vs.Text(Clean(v.Value)), leader, ks.Style, vs.Style)
 
 	case "columns":
 		var v struct {
@@ -408,43 +430,56 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 				Align   *string `json:"align"`
 				Width   int     `json:"width"`
 			} `json:"columns"`
-			Style  *jsonStyle `json:"style"`
-			Border bool       `json:"border"`
+			Style  *css.Properties `json:"style"`
+			Border bool            `json:"border"`
 		}
 		if err := decode(&v); err != nil {
 			return err
 		}
-		st := v.Style.apply(sc.style)
-		t := layout.Table{Border: v.Border, Style: st, Rows: [][]string{nil}}
+		cs, err := r.resolve(v.Style, sc)
+		if err != nil {
+			return err
+		}
+		t := layout.Table{Border: v.Border, Style: cs.Style, Rows: [][]string{nil}}
 		for _, c := range v.Columns {
-			t.Rows[0] = append(t.Rows[0], Clean(c.Content))
+			t.Rows[0] = append(t.Rows[0], cs.Text(Clean(c.Content)))
 			t.Aligns = append(t.Aligns, parseAlign(c.Align, escpos.AlignLeft))
 			t.Weights = append(t.Weights, max(c.Width, 1))
 		}
 		// Built as a table rather than with Writer.Columns so the Unicode
 		// fallback in r.table applies.
-		return r.table(t)
+		return r.around(cs, sc.css, func() error { return r.table(t) })
 
 	case "table":
 		var v struct {
-			Type        string     `json:"type"`
-			Headers     []string   `json:"headers"`
-			Rows        [][]any    `json:"rows"`
-			Align       []string   `json:"align"`
-			Border      bool       `json:"border"`
-			Style       *jsonStyle `json:"style"`
-			HeaderStyle *jsonStyle `json:"header_style"`
+			Type        string          `json:"type"`
+			Headers     []string        `json:"headers"`
+			Rows        [][]any         `json:"rows"`
+			Align       []string        `json:"align"`
+			Border      bool            `json:"border"`
+			Style       *css.Properties `json:"style"`
+			HeaderStyle *css.Properties `json:"header_style"`
 		}
 		if err := decode(&v); err != nil {
 			return err
 		}
-		st := v.Style.apply(sc.style)
-		hs := v.HeaderStyle.apply(layout.Style{Bold: true})
+		ts, err := r.resolve(v.Style, sc)
+		if err != nil {
+			return err
+		}
+		// Headers are bold unless their style says otherwise.
+		headerParent := ts
+		headerParent.Style.Bold = true
+		hc, err := r.resolve(v.HeaderStyle, scope{headerParent})
+		if err != nil {
+			return fmt.Errorf("header_%w", err)
+		}
+		hs := hc.Style
 		// Header and body must share character widths to line up.
-		hs.FontB, hs.Width = st.FontB, st.Width
-		t := layout.Table{Border: v.Border, Style: st, HeaderStyle: hs}
+		hs.FontB, hs.Width, hs.Spacing = ts.Style.FontB, ts.Style.Width, ts.Style.Spacing
+		t := layout.Table{Border: v.Border, Style: ts.Style, HeaderStyle: hs}
 		for _, h := range v.Headers {
-			t.Headers = append(t.Headers, Clean(h))
+			t.Headers = append(t.Headers, hc.Text(Clean(h)))
 		}
 		for _, a := range v.Align {
 			t.Aligns = append(t.Aligns, ParseAlign(a))
@@ -454,7 +489,7 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 			for _, c := range row {
 				switch c := c.(type) {
 				case string:
-					cells = append(cells, Clean(c))
+					cells = append(cells, ts.Text(Clean(c)))
 				case float64:
 					cells = append(cells, strconv.FormatFloat(c, 'f', -1, 64))
 				default:
@@ -463,21 +498,24 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 			}
 			t.Rows = append(t.Rows, cells)
 		}
-		return r.table(t)
+		return r.around(ts, sc.css, func() error { return r.table(t) })
 
 	case "list":
 		var v struct {
-			Type    string     `json:"type"`
-			Items   []string   `json:"items"`
-			Ordered bool       `json:"ordered"`
-			Start   *int       `json:"start"`
-			Marker  string     `json:"marker"`
-			Style   *jsonStyle `json:"style"`
+			Type    string          `json:"type"`
+			Items   []string        `json:"items"`
+			Ordered bool            `json:"ordered"`
+			Start   *int            `json:"start"`
+			Marker  string          `json:"marker"`
+			Style   *css.Properties `json:"style"`
 		}
 		if err := decode(&v); err != nil {
 			return err
 		}
-		st := v.Style.apply(sc.style)
+		ls, err := r.resolve(v.Style, sc)
+		if err != nil {
+			return err
+		}
 		n := 1
 		if v.Start != nil {
 			n = *v.Start
@@ -486,29 +524,39 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 		if v.Marker != "" {
 			marker = Clean(v.Marker)
 		}
-		for _, item := range v.Items {
-			m := marker + " "
-			if v.Ordered {
-				m = fmt.Sprintf("%d. ", n)
-				n++
+		return r.around(ls, sc.css, func() error {
+			for _, item := range v.Items {
+				m := marker + " "
+				if v.Ordered {
+					m = fmt.Sprintf("%d. ", n)
+					n++
+				}
+				if err := r.text([]layout.Span{{Text: ls.Text(Clean(item)), Style: ls.Style}}, m, strings.Repeat(" ", len([]rune(m))), escpos.AlignLeft, !ls.NoWrap); err != nil {
+					return err
+				}
 			}
-			if err := r.text([]layout.Span{{Text: Clean(item), Style: st}}, m, strings.Repeat(" ", len([]rune(m))), escpos.AlignLeft, true); err != nil {
-				return err
-			}
-		}
+			return nil
+		})
 
 	case "box":
 		var v struct {
-			Type    string     `json:"type"`
-			Content string     `json:"content"`
-			Style   *jsonStyle `json:"style"`
-			Align   *string    `json:"align"`
-			Double  bool       `json:"double"`
+			Type    string          `json:"type"`
+			Content string          `json:"content"`
+			Style   *css.Properties `json:"style"`
+			Align   *string         `json:"align"`
+			Double  bool            `json:"double"`
 		}
 		if err := decode(&v); err != nil {
 			return err
 		}
-		w.Box(Clean(v.Content), v.Style.apply(sc.style), parseAlign(v.Align, escpos.AlignLeft), v.Double)
+		bs, err := r.resolve(v.Style, sc)
+		if err != nil {
+			return err
+		}
+		return r.around(bs, sc.css, func() error {
+			w.Box(bs.Text(Clean(v.Content)), bs.Style, parseAlign(v.Align, bs.Align), v.Double)
+			return nil
+		})
 
 	case "qr_code":
 		var v struct {
@@ -622,7 +670,7 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 			Type    string `json:"type"`
 			Mode    string `json:"mode"`
 			Content string `json:"content"`
-			Feed    uint8  `json:"feed"`
+			Feed    *uint8 `json:"feed"`
 		}
 		if err := decode(&v); err != nil {
 			return err
@@ -632,10 +680,11 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 			mode = v.Content
 		}
 		w.Apply(layout.Style{})
+		feed := ptrOr(v.Feed, r.env.CutFeed)
 		if strings.EqualFold(mode, "full") {
-			b.FeedAndFullCut(v.Feed)
+			b.FeedAndFullCut(feed)
 		} else {
-			b.FeedAndCut(v.Feed)
+			b.FeedAndCut(feed)
 		}
 		r.lastCut = depth == 0
 
@@ -745,26 +794,34 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 		if err := decode(&v); err != nil {
 			return err
 		}
-		width := uint16(max(r.env.PaperWidth-int(v.Left), 8))
+		width := max(r.env.PaperWidth-int(v.Left), 8)
 		if v.Width != nil && *v.Width > 0 {
-			width = min(*v.Width, width)
+			width = min(int(*v.Width), width)
 		}
-		b.SetLeftMargin(v.Left)
-		b.SetPrintAreaWidth(width)
-		w.Width = int(width)
+		r.setMargins(int(v.Left), width)
 
 	case "group":
 		var v struct {
 			Type   string            `json:"type"`
-			Style  *jsonStyle        `json:"style"`
+			Style  *css.Properties   `json:"style"`
 			Align  *string           `json:"align"`
 			Blocks []json.RawMessage `json:"blocks"`
 		}
 		if err := decode(&v); err != nil {
 			return err
 		}
-		inner := scope{style: v.Style.apply(sc.style), align: parseAlign(v.Align, sc.align)}
-		return r.blocks(v.Blocks, inner, path+"/blocks", depth+1)
+		gs, err := r.resolve(v.Style, sc)
+		if err != nil {
+			return err
+		}
+		gs.Align = parseAlign(v.Align, gs.Align)
+		// Children inherit the group's style; its line height and margins
+		// apply while they print.
+		return r.around(gs, sc.css, func() error {
+			inner := gs
+			inner.MarginLeft, inner.Width = 0, 0
+			return r.blocks(v.Blocks, scope{inner}, path+"/blocks", depth+1)
+		})
 
 	case "page":
 		var v struct {
@@ -817,17 +874,17 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 
 	case "counter":
 		var v struct {
-			Type   string     `json:"type"`
-			Set    *uint16    `json:"set"`
-			From   *uint16    `json:"from"`
-			To     *uint16    `json:"to"`
-			Step   *uint8     `json:"step"`
-			Repeat *uint8     `json:"repeat"`
-			Digits uint8      `json:"digits"`
-			Pad    string     `json:"pad"`
-			Prefix string     `json:"prefix"`
-			Style  *jsonStyle `json:"style"`
-			Align  *string    `json:"align"`
+			Type   string          `json:"type"`
+			Set    *uint16         `json:"set"`
+			From   *uint16         `json:"from"`
+			To     *uint16         `json:"to"`
+			Step   *uint8          `json:"step"`
+			Repeat *uint8          `json:"repeat"`
+			Digits uint8           `json:"digits"`
+			Pad    string          `json:"pad"`
+			Prefix string          `json:"prefix"`
+			Style  *css.Properties `json:"style"`
+			Align  *string         `json:"align"`
 		}
 		if err := decode(&v); err != nil {
 			return err
@@ -846,21 +903,27 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 		if v.Set != nil {
 			b.SetCounter(*v.Set)
 		}
-		w.SetAlign(parseAlign(v.Align, sc.align))
-		st := v.Style.apply(sc.style)
-		w.Apply(st)
-		b.Text(ForCodePage437(Clean(v.Prefix)))
-		b.PrintCounter()
-		b.LineFeed()
+		cs, err := r.resolve(v.Style, sc)
+		if err != nil {
+			return err
+		}
+		return r.around(cs, sc.css, func() error {
+			w.SetAlign(parseAlign(v.Align, cs.Align))
+			w.Apply(cs.Style)
+			b.Text(cs.Text(Clean(v.Prefix)))
+			b.PrintCounter()
+			b.LineFeed()
+			return nil
+		})
 
 	case "datetime":
 		var v struct {
-			Type     string     `json:"type"`
-			Format   string     `json:"format"`
-			Timezone string     `json:"timezone"`
-			Prefix   string     `json:"prefix"`
-			Style    *jsonStyle `json:"style"`
-			Align    *string    `json:"align"`
+			Type     string          `json:"type"`
+			Format   string          `json:"format"`
+			Timezone string          `json:"timezone"`
+			Prefix   string          `json:"prefix"`
+			Style    *css.Properties `json:"style"`
+			Align    *string         `json:"align"`
 		}
 		if err := decode(&v); err != nil {
 			return err
@@ -880,8 +943,14 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 		if format == "" {
 			format = v.Format
 		}
-		s := Clean(v.Prefix) + now.Format(format)
-		return r.text([]layout.Span{{Text: s, Style: v.Style.apply(sc.style)}}, "", "", parseAlign(v.Align, sc.align), true)
+		ds, err := r.resolve(v.Style, sc)
+		if err != nil {
+			return err
+		}
+		s := ds.Text(Clean(v.Prefix) + now.Format(format))
+		return r.around(ds, sc.css, func() error {
+			return r.text([]layout.Span{{Text: s, Style: ds.Style}}, "", "", parseAlign(v.Align, ds.Align), !ds.NoWrap)
+		})
 
 	case "self_test":
 		b.PrintTestPage()

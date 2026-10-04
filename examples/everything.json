@@ -7,14 +7,15 @@
     { "type": "heading", "content": "Block tour", "level": 1 },
     { "type": "heading", "content": "Text and styles", "level": 2 },
     { "type": "text", "content": "Plain text wraps at the paper width, breaking between words so nothing is split mid-word unless it has to be." },
-    { "type": "text", "content": "Bold, underlined, inverted", "style": { "bold": true, "underline": 2, "invert": true } },
-    { "type": "text", "content": "Font B is smaller", "style": { "font": "B" } },
-    { "type": "text", "content": "Tall", "style": { "height": 3 }, "align": "right" },
-    { "type": "text", "content": "Upside down", "style": { "upside_down": true } },
+    { "type": "text", "content": "Bold, underlined, inverted", "style": { "fontWeight": "bold", "textDecoration": "underline double", "backgroundColor": "black", "color": "white" } },
+    { "type": "text", "content": "Font B is smaller", "style": { "fontFamily": "Font B" } },
+    { "type": "text", "content": "Tall", "style": { "transform": "scaleY(3)", "textAlign": "right" } },
+    { "type": "text", "content": "Spaced out capitals", "style": { "letterSpacing": 4, "textTransform": "uppercase" } },
+    { "type": "text", "content": "Upside down", "style": { "transform": "rotate(180deg)" } },
     { "type": "text", "content": "No wrapping: the printer breaks this line wherever it runs out of room, mid-word.", "wrap": false },
-    { "type": "group", "style": { "font": "B" }, "align": "center", "blocks": [
+    { "type": "group", "style": { "fontFamily": "Font B", "textAlign": "center", "lineHeight": 1.5, "marginLeft": 48 }, "blocks": [
       { "type": "text", "content": "Groups share a style" },
-      { "type": "text", "content": "and children can override it", "style": { "bold": true } }
+      { "type": "text", "content": "and children can override it", "style": { "fontWeight": "bold" } }
     ] },
     { "type": "box", "content": "Boxes draw a frame around wrapped text.", "align": "center" },
     { "type": "box", "content": "Double", "double": true },
