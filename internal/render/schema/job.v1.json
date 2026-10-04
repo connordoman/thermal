@@ -1,0 +1,1809 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://thermal.local/schema/job.v1.json",
+  "title": "Thermal print job",
+  "description": "A print job made of blocks, accepted by POST /v1/print/json. The body is either a document object or a bare array of blocks.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/document"
+    },
+    {
+      "$ref": "#/$defs/blocks"
+    }
+  ],
+  "$defs": {
+    "align": {
+      "enum": [
+        "left",
+        "center",
+        "right"
+      ]
+    },
+    "style": {
+      "type": "object",
+      "properties": {
+        "bold": {
+          "type": "boolean"
+        },
+        "underline": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2
+            }
+          ],
+          "description": "true or 1 for a 1-dot line, 2 for 2 dots."
+        },
+        "double_strike": {
+          "type": "boolean"
+        },
+        "invert": {
+          "type": "boolean",
+          "description": "White on black."
+        },
+        "font": {
+          "enum": [
+            "A",
+            "B"
+          ],
+          "description": "A is 12×24 dots (48 columns on 80 mm), B is 9×17 (64 columns)."
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8,
+          "description": "Sets width and height together."
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8,
+          "description": "Character width multiplier."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8,
+          "description": "Character height multiplier."
+        },
+        "upside_down": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Character style. Inside a group, unset fields inherit the group's style."
+    },
+    "blocks": {
+      "type": "array",
+      "maxItems": 2000,
+      "items": {
+        "$ref": "#/$defs/block"
+      }
+    },
+    "block": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "barcode",
+            "beep",
+            "box",
+            "charset",
+            "code_page",
+            "columns",
+            "counter",
+            "cut",
+            "datetime",
+            "drawer",
+            "feed",
+            "group",
+            "heading",
+            "image",
+            "initialize",
+            "key_value",
+            "line_spacing",
+            "list",
+            "margins",
+            "markdown",
+            "page",
+            "pdf417",
+            "qr_code",
+            "raw",
+            "rule",
+            "self_test",
+            "table",
+            "text",
+            "unicode",
+            "utf8"
+          ],
+          "description": "The kind of block."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "text"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_text"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "heading"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_heading"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "markdown"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_markdown"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "unicode"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_unicode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "utf8"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_utf8"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "feed"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_feed"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "rule"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_rule"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "key_value"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_key_value"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "columns"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_columns"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "table"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_table"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "list"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_list"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "box"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_box"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "qr_code"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_qr_code"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "barcode"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_barcode"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "pdf417"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_pdf417"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "image"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_image"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "cut"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_cut"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "drawer"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_drawer"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "beep"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_beep"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "raw"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_raw"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "initialize"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_initialize"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "code_page"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_code_page"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "charset"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_charset"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "line_spacing"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_line_spacing"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "margins"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_margins"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "group"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_group"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "page"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_page"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "counter"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_counter"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "datetime"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_datetime"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "self_test"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_self_test"
+          }
+        }
+      ]
+    },
+    "options": {
+      "type": "object",
+      "properties": {
+        "cut": {
+          "enum": [
+            "none",
+            "partial",
+            "full"
+          ],
+          "description": "How the job ends.",
+          "default": "partial"
+        },
+        "feed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255,
+          "description": "Extra dots fed before the cut.",
+          "default": 0
+        },
+        "copies": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "default": 1
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": -100,
+          "maximum": 100,
+          "description": "Higher priorities print first.",
+          "default": 0
+        },
+        "open_drawer": {
+          "type": "boolean",
+          "description": "Kick the cash drawer after printing.",
+          "default": false
+        },
+        "beep": {
+          "type": "boolean",
+          "description": "Beep after printing.",
+          "default": false
+        },
+        "unicode": {
+          "enum": [
+            "image",
+            "transliterate"
+          ],
+          "description": "How text blocks print characters the printer's fonts lack.",
+          "default": "image"
+        }
+      },
+      "additionalProperties": false
+    },
+    "document": {
+      "type": "object",
+      "properties": {
+        "$schema": {
+          "type": "string"
+        },
+        "version": {
+          "const": 1,
+          "description": "Schema version."
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Free-form data stored with the job. label is shown in the job list.",
+          "properties": {
+            "label": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        },
+        "options": {
+          "$ref": "#/$defs/options"
+        },
+        "blocks": {
+          "$ref": "#/$defs/blocks"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "blocks"
+      ]
+    },
+    "block_text": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "text"
+        },
+        "content": {
+          "type": "string",
+          "description": "Text to print. Characters the printer's fonts lack (emoji, CJK, ...) are drawn as an image when options.unicode is \"image\".",
+          "maxLength": 65536
+        },
+        "spans": {
+          "type": "array",
+          "description": "Rich text: runs with their own styles, printed as one paragraph.",
+          "minItems": 1,
+          "maxItems": 500,
+          "items": {
+            "type": "object",
+            "properties": {
+              "content": {
+                "type": "string",
+                "maxLength": 65536
+              },
+              "style": {
+                "$ref": "#/$defs/style"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "content"
+            ]
+          }
+        },
+        "style": {
+          "$ref": "#/$defs/style"
+        },
+        "align": {
+          "$ref": "#/$defs/align"
+        },
+        "wrap": {
+          "type": "boolean",
+          "description": "Word-wrap at the paper width. When false the printer wraps mid-word.",
+          "default": true
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "description": "A paragraph of text, word-wrapped to the paper width. Give either content or spans.",
+      "oneOf": [
+        {
+          "required": [
+            "content"
+          ]
+        },
+        {
+          "required": [
+            "spans"
+          ]
+        }
+      ]
+    },
+    "block_heading": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "heading"
+        },
+        "content": {
+          "type": "string",
+          "description": "Text to print. Characters the printer's fonts lack (emoji, CJK, ...) are drawn as an image when options.unicode is \"image\".",
+          "maxLength": 65536
+        },
+        "level": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 6,
+          "default": 1
+        },
+        "align": {
+          "$ref": "#/$defs/align"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "content"
+      ],
+      "description": "A heading in the same styles as Markdown headings."
+    },
+    "block_markdown": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "markdown"
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 262144
+        },
+        "links": {
+          "enum": [
+            "inline",
+            "footnotes",
+            "qr",
+            "hide"
+          ],
+          "description": "How links are printed.",
+          "default": "inline"
+        },
+        "images": {
+          "type": "boolean",
+          "description": "Print ![images](src). When false the alt text is printed.",
+          "default": true
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "content"
+      ],
+      "description": "GitHub-flavoured Markdown: headings, emphasis, lists, task lists, tables, quotes, code, links, images, footnotes and :emoji: shortcodes."
+    },
+    "block_unicode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "unicode"
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 65536
+        },
+        "scale": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 8,
+          "default": 2,
+          "description": "Dots per font pixel. 1.5 matches the printer's Font A."
+        },
+        "bold": {
+          "type": "boolean",
+          "default": false
+        },
+        "invert": {
+          "type": "boolean",
+          "description": "White on black.",
+          "default": false
+        },
+        "align": {
+          "$ref": "#/$defs/align"
+        },
+        "line_gap": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255,
+          "description": "Extra dots between lines."
+        },
+        "wrap": {
+          "type": "boolean",
+          "default": true
+        },
+        "weight": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4,
+          "description": "Extra dots added to each stroke of non-emoji glyphs. Default 1 below scale 3, matching the printer's own fonts."
+        },
+        "solid_emoji": {
+          "type": "boolean",
+          "default": false,
+          "description": "Print emoji solid black. By default their solid areas are shaded grey, which reads better next to text."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "content"
+      ],
+      "description": "Text drawn as an image with GNU Unifont, so every Unicode character prints: emoji, kanji, Arabic, symbols. Arabic and Hebrew are not shaped or reordered."
+    },
+    "block_utf8": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "utf8"
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 65536
+        },
+        "scale": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 8,
+          "default": 2,
+          "description": "Dots per font pixel. 1.5 matches the printer's Font A."
+        },
+        "bold": {
+          "type": "boolean",
+          "default": false
+        },
+        "invert": {
+          "type": "boolean",
+          "description": "White on black.",
+          "default": false
+        },
+        "align": {
+          "$ref": "#/$defs/align"
+        },
+        "line_gap": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255,
+          "description": "Extra dots between lines."
+        },
+        "wrap": {
+          "type": "boolean",
+          "default": true
+        },
+        "weight": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4,
+          "description": "Extra dots added to each stroke of non-emoji glyphs. Default 1 below scale 3, matching the printer's own fonts."
+        },
+        "solid_emoji": {
+          "type": "boolean",
+          "default": false,
+          "description": "Print emoji solid black. By default their solid areas are shaded grey, which reads better next to text."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "content"
+      ],
+      "description": "Alias of unicode."
+    },
+    "block_feed": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "feed"
+        },
+        "lines": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "dots": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255,
+          "description": "1 dot is 0.125 mm."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "description": "Feed paper. Give lines or dots.",
+      "oneOf": [
+        {
+          "required": [
+            "lines"
+          ]
+        },
+        {
+          "required": [
+            "dots"
+          ]
+        }
+      ]
+    },
+    "block_rule": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "rule"
+        },
+        "char": {
+          "type": "string",
+          "description": "The character repeated across the line.",
+          "minLength": 1,
+          "maxLength": 1,
+          "default": "─"
+        },
+        "style": {
+          "$ref": "#/$defs/style"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "description": "A full-width horizontal line."
+    },
+    "block_key_value": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "key_value"
+        },
+        "key": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "leader": {
+          "type": "string",
+          "description": "Fills the gap between key and value.",
+          "minLength": 1,
+          "maxLength": 1,
+          "default": " "
+        },
+        "key_style": {
+          "$ref": "#/$defs/style"
+        },
+        "value_style": {
+          "$ref": "#/$defs/style"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "key",
+        "value"
+      ],
+      "description": "A label on the left and a value on the right, like a receipt line item."
+    },
+    "block_columns": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "columns"
+        },
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "properties": {
+              "content": {
+                "type": "string",
+                "maxLength": 4096
+              },
+              "align": {
+                "$ref": "#/$defs/align"
+              },
+              "width": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100,
+                "description": "Relative width; columns share the line in proportion.",
+                "default": 1
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "content"
+            ]
+          }
+        },
+        "style": {
+          "$ref": "#/$defs/style"
+        },
+        "border": {
+          "type": "boolean",
+          "description": "Separate columns with │.",
+          "default": false
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "columns"
+      ],
+      "description": "Text side by side in columns that wrap independently."
+    },
+    "block_table": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "table"
+        },
+        "headers": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        },
+        "rows": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "type": [
+                "string",
+                "number"
+              ]
+            }
+          }
+        },
+        "align": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/align"
+          },
+          "description": "Alignment of each column."
+        },
+        "border": {
+          "type": "boolean",
+          "description": "Separate columns with │.",
+          "default": false
+        },
+        "style": {
+          "$ref": "#/$defs/style"
+        },
+        "header_style": {
+          "$ref": "#/$defs/style"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "rows"
+      ],
+      "description": "A table with optional headers. Columns are sized to their content and wrap when the table is too wide."
+    },
+    "block_list": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "list"
+        },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1000,
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        "ordered": {
+          "type": "boolean",
+          "default": false
+        },
+        "start": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000,
+          "default": 1
+        },
+        "marker": {
+          "type": "string",
+          "description": "Bullet for unordered lists.",
+          "minLength": 1,
+          "maxLength": 4,
+          "default": "-"
+        },
+        "style": {
+          "$ref": "#/$defs/style"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "items"
+      ],
+      "description": "A bulleted or numbered list."
+    },
+    "block_box": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "box"
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "style": {
+          "$ref": "#/$defs/style"
+        },
+        "align": {
+          "$ref": "#/$defs/align"
+        },
+        "double": {
+          "type": "boolean",
+          "description": "Use double lines.",
+          "default": false
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "content"
+      ],
+      "description": "Text inside a box drawn with box-drawing characters."
+    },
+    "block_qr_code": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "qr_code"
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 7089
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16,
+          "description": "Module size in dots.",
+          "default": 6
+        },
+        "error_correction": {
+          "enum": [
+            "L",
+            "M",
+            "Q",
+            "H"
+          ],
+          "default": "M"
+        },
+        "model": {
+          "enum": [
+            1,
+            2
+          ],
+          "default": 2
+        },
+        "align": {
+          "$ref": "#/$defs/align"
+        },
+        "caption": {
+          "type": "string",
+          "description": "Printed below the code in the small font.",
+          "maxLength": 1024
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "content"
+      ],
+      "description": "A QR code (GS ( k)."
+    },
+    "block_barcode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "barcode"
+        },
+        "symbology": {
+          "enum": [
+            "UPC-A",
+            "UPC-E",
+            "EAN13",
+            "EAN8",
+            "CODE39",
+            "ITF",
+            "CODABAR",
+            "CODE93",
+            "CODE128"
+          ]
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "description": "For CODE128 plain text is accepted; the code set is chosen automatically unless it starts with {A, {B or {C."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 255,
+          "description": "Bar height in dots.",
+          "default": 80
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 6,
+          "description": "Module width in dots.",
+          "default": 3
+        },
+        "hri": {
+          "enum": [
+            "none",
+            "above",
+            "below",
+            "both"
+          ],
+          "description": "Where the human-readable text goes.",
+          "default": "below"
+        },
+        "hri_font": {
+          "enum": [
+            "A",
+            "B"
+          ],
+          "default": "A"
+        },
+        "align": {
+          "$ref": "#/$defs/align"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "symbology",
+        "content"
+      ],
+      "description": "A one-dimensional bar code (GS k)."
+    },
+    "block_pdf417": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "pdf417"
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1800
+        },
+        "columns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30,
+          "default": 4
+        },
+        "security": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8,
+          "description": "Error correction level.",
+          "default": 2
+        },
+        "ratio": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 5,
+          "description": "Vertical:horizontal module ratio.",
+          "default": 3
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 6,
+          "description": "Module width in dots.",
+          "default": 2
+        },
+        "align": {
+          "$ref": "#/$defs/align"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "content"
+      ],
+      "description": "A PDF417 two-dimensional bar code."
+    },
+    "block_image": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "image"
+        },
+        "src": {
+          "type": "string",
+          "description": "An http(s) URL, a data: URI, or base64 image data.",
+          "minLength": 1,
+          "maxLength": 20000000
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024,
+          "description": "Width in dots; default fits the paper without enlarging."
+        },
+        "align": {
+          "$ref": "#/$defs/align"
+        },
+        "dither": {
+          "type": "boolean",
+          "description": "Floyd–Steinberg dithering, for photos. Turn off for logos and line art.",
+          "default": true
+        },
+        "threshold": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 255,
+          "description": "Luminance below which a pixel prints, when not dithering.",
+          "default": 128
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "src"
+      ],
+      "description": "A PNG, JPEG, GIF or WebP image, scaled to fit the paper. URLs must be public http(s) addresses serving an image Content-Type that matches the file; size and dimensions are limited."
+    },
+    "block_cut": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "cut"
+        },
+        "mode": {
+          "enum": [
+            "partial",
+            "full",
+            "PARTIAL",
+            "FULL"
+          ],
+          "description": "The RP326 always cuts partially.",
+          "default": "partial"
+        },
+        "content": {
+          "enum": [
+            "partial",
+            "full",
+            "PARTIAL",
+            "FULL"
+          ],
+          "description": "Alias of mode."
+        },
+        "feed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255,
+          "description": "Extra dots fed before cutting.",
+          "default": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "description": "Feed past the print head and cut the paper."
+    },
+    "block_drawer": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "drawer"
+        },
+        "pin": {
+          "enum": [
+            2,
+            5
+          ],
+          "default": 2
+        },
+        "on_ms": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 510,
+          "default": 100
+        },
+        "off_ms": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 510,
+          "default": 500
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "description": "Kick a cash drawer connected to the RJ11 port."
+    },
+    "block_beep": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "beep"
+        },
+        "tone": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9,
+          "default": 1
+        },
+        "duration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9,
+          "default": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "description": "Sound the buzzer (ESC B n t). The reference calls n the tone and t the time without giving units; on the RP326, tone 1 duration 2 is a single beep of about 0.3 s."
+    },
+    "block_raw": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "raw"
+        },
+        "hex": {
+          "type": "string",
+          "pattern": "^([0-9a-fA-F]{2}\\s*)*$",
+          "maxLength": 2000000
+        },
+        "base64": {
+          "type": "string",
+          "maxLength": 2000000
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "description": "Bytes sent to the printer as they are. Give hex or base64.",
+      "oneOf": [
+        {
+          "required": [
+            "hex"
+          ]
+        },
+        {
+          "required": [
+            "base64"
+          ]
+        }
+      ]
+    },
+    "block_initialize": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "initialize"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "description": "Reset the printer to its power-on state (ESC @)."
+    },
+    "block_code_page": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "code_page"
+        },
+        "code_page": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 47,
+          "description": "0 is CP437 (default), 16 is Windows-1252, 19 is CP858 and so on; see the printer's command reference."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "code_page"
+      ],
+      "description": "Select the character code table (ESC t). Text is then encoded for it."
+    },
+    "block_charset": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "charset"
+        },
+        "charset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 15,
+          "description": "0 USA, 1 France, 2 Germany, 3 UK, 4 Denmark I, 5 Sweden, 6 Italy, 7 Spain I, 8 Japan, 9 Norway, 10 Denmark II, 11 Spain II, 12 Latin America, 13 Korea, 14 Slovenia/Croatia, 15 China."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "charset"
+      ],
+      "description": "Select an international character set (ESC R), which replaces a few ASCII symbols."
+    },
+    "block_line_spacing": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "line_spacing"
+        },
+        "dots": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            {
+              "const": "default"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "dots"
+      ],
+      "description": "Set the line spacing for following text."
+    },
+    "block_margins": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "margins"
+        },
+        "left": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1023,
+          "description": "Left margin in dots.",
+          "default": 0
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1023,
+          "description": "Printable width in dots; 0 means the rest of the paper."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "description": "Set the left margin and printable width (GS L, GS W) for following content."
+    },
+    "block_group": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "group"
+        },
+        "style": {
+          "$ref": "#/$defs/style"
+        },
+        "align": {
+          "$ref": "#/$defs/align"
+        },
+        "blocks": {
+          "$ref": "#/$defs/blocks"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "blocks"
+      ],
+      "description": "Blocks sharing a style and alignment. Groups may nest."
+    },
+    "block_page": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "page"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024,
+          "description": "Page area width in dots; default the paper width."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2400,
+          "description": "Page area height in dots.",
+          "default": 400
+        },
+        "x": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1023,
+          "default": 0
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2400,
+          "default": 0
+        },
+        "direction": {
+          "enum": [
+            "left_to_right",
+            "bottom_to_top",
+            "right_to_left",
+            "top_to_bottom"
+          ],
+          "default": "left_to_right"
+        },
+        "blocks": {
+          "$ref": "#/$defs/blocks"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "blocks"
+      ],
+      "description": "Blocks composed in page mode, which allows rotating the print direction. Raster images do not print in page mode."
+    },
+    "block_counter": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "counter"
+        },
+        "set": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535,
+          "description": "Set the counter before printing."
+        },
+        "from": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "to": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "step": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255,
+          "default": 1
+        },
+        "repeat": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255,
+          "default": 1
+        },
+        "digits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5,
+          "description": "0 prints as many digits as needed.",
+          "default": 0
+        },
+        "pad": {
+          "enum": [
+            "spaces",
+            "zeros",
+            "left"
+          ],
+          "default": "spaces"
+        },
+        "prefix": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "style": {
+          "$ref": "#/$defs/style"
+        },
+        "align": {
+          "$ref": "#/$defs/align"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "description": "Print the printer's serial number counter, then step it."
+    },
+    "block_datetime": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "datetime"
+        },
+        "format": {
+          "type": "string",
+          "description": "date, time, datetime (default), rfc3339, or a Go time layout such as \"Mon 2 Jan 2006 15:04\".",
+          "maxLength": 128
+        },
+        "timezone": {
+          "type": "string",
+          "description": "An IANA time zone such as America/Vancouver; default the server's.",
+          "maxLength": 64
+        },
+        "prefix": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "style": {
+          "$ref": "#/$defs/style"
+        },
+        "align": {
+          "$ref": "#/$defs/align"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "description": "The current date and time when the job is rendered."
+    },
+    "block_self_test": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "self_test"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "description": "Print the printer's self-test page."
+    }
+  }
+}

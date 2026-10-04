@@ -1,52 +1,92 @@
 package settings
 
 import (
-	"os"
+	"errors"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/connordoman/escpos"
 )
 
 const (
+	// EnvEscposConnection selects how to reach the printer:
+	//
+	//	usb                        auto-detect (default)
+	//	libusb                     auto-detect using libusb only
+	//	file:/dev/usb/lp0          a device node or file
+	//	tcp://192.168.1.50:9100    Ethernet
+	//	serial:/dev/ttyUSB0?baud=9600
+	//	discard                    accept jobs without printing (testing)
+	EnvEscposConnection = "ESCPOS_CONNECTION"
+
+	// EnvEscposVendorId and EnvEscposProductId narrow USB auto-detection to
+	// one model. Both are optional.
 	EnvEscposVendorId  = "ESCPOS_VENDOR_ID"
 	EnvEscposProductId = "ESCPOS_PRODUCT_ID"
+
+	// EnvEscposUSBSerial narrows USB auto-detection to one printer.
+	EnvEscposUSBSerial = "ESCPOS_USB_SERIAL"
+
+	// EnvEscposPaperWidth is the printable width: 80mm, 58mm, or dots.
+	EnvEscposPaperWidth = "ESCPOS_PAPER_WIDTH"
+
+	// EnvEscposTimeout bounds each status query.
+	EnvEscposTimeout = "ESCPOS_TIMEOUT"
 )
 
 type PrinterConfig struct {
-	VendorId  uint16
-	ProductId uint16
+	Connection string
+	VendorId   uint16
+	ProductId  uint16
+	USBSerial  string
+	PaperWidth int
+	Timeout    time.Duration
 }
 
 func NewPrinterConfig() *PrinterConfig {
 	return &PrinterConfig{}
 }
 
-// parseHexId reads a 16-bit hex ID from the environment, with or without a 0x prefix.
-func parseHexId(key string) (uint64, error) {
-	v := strings.TrimSpace(os.Getenv(key))
-	v = strings.TrimPrefix(strings.TrimPrefix(v, "0x"), "0X")
-	return strconv.ParseUint(v, 16, 16)
+var paperWidths = map[string]int{
+	"80mm": escpos.PaperWidth80mm,
+	"82mm": escpos.PaperWidth82mm,
+	"60mm": escpos.PaperWidth60mm,
+	"58mm": escpos.PaperWidth58mm,
 }
 
 func (p *PrinterConfig) Load() error {
-	parsedVendor, err := parseHexId(EnvEscposVendorId)
-	if err != nil {
-		return configError("VendorId", "Failed to parse "+EnvEscposVendorId+": "+err.Error())
+	var errs []error
+	var err error
+	p.Connection = envString(EnvEscposConnection, "usb")
+	if p.VendorId, err = parseHexId(EnvEscposVendorId); err != nil {
+		errs = append(errs, err)
 	}
-	parsedProduct, err := parseHexId(EnvEscposProductId)
-	if err != nil {
-		return configError("ProductId", "Failed to parse "+EnvEscposProductId+": "+err.Error())
+	if p.ProductId, err = parseHexId(EnvEscposProductId); err != nil {
+		errs = append(errs, err)
 	}
-	p.VendorId = uint16(parsedVendor)
-	p.ProductId = uint16(parsedProduct)
-	return nil
+	p.USBSerial = envString(EnvEscposUSBSerial, "")
+
+	w := strings.ToLower(envString(EnvEscposPaperWidth, "80mm"))
+	if dots, ok := paperWidths[w]; ok {
+		p.PaperWidth = dots
+	} else if n, err := strconv.Atoi(w); err == nil {
+		p.PaperWidth = n
+	} else {
+		errs = append(errs, configError(EnvEscposPaperWidth, "want 80mm, 82mm, 60mm, 58mm or a width in dots"))
+	}
+	if p.Timeout, err = envDuration(EnvEscposTimeout, escpos.DefaultTimeout); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
 }
 
 func (p *PrinterConfig) Validate() error {
-	if p.VendorId == 0 {
-		return configError("VendorId", "VendorId cannot be zero")
+	if p.PaperWidth < 64 || p.PaperWidth > 1024 || p.PaperWidth%8 != 0 {
+		return configError(EnvEscposPaperWidth, "width must be a multiple of 8 dots from 64 to 1024")
 	}
-	if p.ProductId == 0 {
-		return configError("ProductId", "ProductId cannot be zero")
+	if p.Timeout <= 0 {
+		return configError(EnvEscposTimeout, "must be positive")
 	}
 	return nil
 }

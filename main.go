@@ -3,13 +3,28 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
+	"fmt"
 	"io/fs"
 	"log"
+	"net/http"
 	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+	_ "time/tzdata" // datetime blocks can name any time zone
 
+	"github.com/connordoman/thermal/internal/auth"
 	"github.com/connordoman/thermal/internal/console"
+	"github.com/connordoman/thermal/internal/device"
+	"github.com/connordoman/thermal/internal/queue"
+	"github.com/connordoman/thermal/internal/render"
+	"github.com/connordoman/thermal/internal/render/font"
+	"github.com/connordoman/thermal/internal/server"
 	"github.com/connordoman/thermal/internal/settings"
-	"github.com/connordoman/thermal/internal/thermal"
+	"github.com/connordoman/thermal/internal/store"
+	"github.com/connordoman/thermal/internal/store/dbq"
 	"github.com/joho/godotenv"
 )
 
@@ -24,21 +39,136 @@ func init() {
 	if errs := settings.Load(); len(errs) > 0 {
 		console.Fatal("failed to load settings: %d error(s): %v", len(errs), errs)
 	}
+	if errs := settings.Validate(); len(errs) > 0 {
+		console.Fatal("invalid settings: %d error(s): %v", len(errs), errs)
+	}
 }
 
 func main() {
-	printer, close, err := thermal.GetPrinter()
+	newAdmin := flag.String("new-admin-key", "", "create an admin key with this name, print it and exit (for when every admin key is lost)")
+	flag.Parse()
+
+	cfg := settings.Global
+	console.SetLogLevel(console.LogLevelDebug, cfg.Server.Debug)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	db, err := store.Open(ctx, cfg.Server.DBPath)
 	if err != nil {
-		console.Fatal("failed to get printer: %v", err)
-		os.Exit(1)
+		console.Fatal("opening database %s: %v", cfg.Server.DBPath, err)
+	}
+	defer db.Close()
+	keys := auth.NewManager(db.Queries)
+
+	if *newAdmin != "" {
+		full, _, err := keys.Create(ctx, *newAdmin, []auth.Scope{auth.ScopeAdmin}, nil, "cli")
+		if err != nil {
+			console.Fatal("creating key: %v", err)
+		}
+		fmt.Println(full)
 		return
 	}
-	defer close()
+	if err := bootstrap(ctx, db, keys); err != nil {
+		console.Fatal("creating the bootstrap key: %v", err)
+	}
 
-	thermal.RenderUTF8(printer, "hello world")
+	target, err := device.ParseConnection(cfg.Printer.Connection)
+	if err != nil {
+		console.Fatal("%s: %v", settings.EnvEscposConnection, err)
+	}
+	dev := device.New(device.Config{
+		Target:     target,
+		VendorID:   cfg.Printer.VendorId,
+		ProductID:  cfg.Printer.ProductId,
+		USBSerial:  cfg.Printer.USBSerial,
+		PaperWidth: cfg.Printer.PaperWidth,
+		Timeout:    cfg.Printer.Timeout,
+	})
+	defer dev.Close()
 
-	printer.Flush(context.Background())
+	q := queue.New(db, dev, cfg.Server.Retention)
+	workerDone := make(chan struct{})
+	go func() {
+		defer close(workerDone)
+		q.Run(ctx)
+	}()
 
-	printer.FeedAndCut(50)
-	printer.Flush(context.Background())
+	// Parse the Unicode font now rather than during the first request.
+	go func() {
+		if _, err := font.Load(); err != nil {
+			console.Error("loading font: %v", err)
+		}
+	}()
+
+	srv := &server.Server{
+		Store:        db,
+		Keys:         keys,
+		Device:       dev,
+		Queue:        q,
+		Images:       render.NewImageLoader(cfg.Server.ImageAllowPrivateHosts, cfg.Server.ImageMaxBytes, cfg.Server.ImageTimeout),
+		MaxBodyBytes: cfg.Server.MaxBodyBytes,
+		Debug:        cfg.Server.Debug,
+	}
+	httpServer := &http.Server{
+		Addr:              cfg.Server.Addr,
+		Handler:           srv.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       2 * time.Minute,
+		IdleTimeout:       2 * time.Minute,
+	}
+	go func() {
+		console.Info("listening on %s (printer: %s, database: %s)", cfg.Server.Addr, target, cfg.Server.DBPath)
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			console.Fatal("serving: %v", err)
+		}
+	}()
+
+	<-ctx.Done()
+	console.Info("shutting down")
+	sctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := httpServer.Shutdown(sctx); err != nil {
+		console.Warn("closing connections: %v", err)
+	}
+	select {
+	case <-workerDone:
+	case <-sctx.Done():
+		console.Warn("gave up waiting for the job in progress")
+	}
+}
+
+// bootstrap creates the first admin key when the database is new (or has no
+// usable keys) and prints it once.
+func bootstrap(ctx context.Context, db *store.Store, keys *auth.Manager) error {
+	n, err := db.CountActiveAPIKeys(ctx)
+	if err != nil {
+		return err
+	}
+	if !db.Created && n > 0 {
+		return nil
+	}
+	full, k, err := keys.Create(ctx, "bootstrap", []auth.Scope{auth.ScopeAdmin}, nil, "server")
+	if err != nil {
+		return err
+	}
+	_ = db.InsertAuditEvent(ctx, dbq.InsertAuditEventParams{
+		At: store.Now(), Action: "key.bootstrap", Target: store.NullString(k.ID),
+	})
+	line := strings.Repeat("─", 72)
+	fmt.Fprintf(os.Stderr, "\n%s\n  Bootstrap admin API key (shown once):\n\n    %s\n\n"+
+		"  Use it to create keys for your apps:\n\n"+
+		"    curl -X POST http://localhost%s/v1/keys \\\n"+
+		"      -H 'Authorization: Bearer %s' \\\n"+
+		"      -d '{\"name\":\"my-app\",\"scopes\":[\"print\",\"read\"]}'\n\n"+
+		"  Then revoke or rotate it: DELETE /v1/keys/%s once you have another admin key.\n%s\n\n",
+		line, full, addrPort(settings.Global.Server.Addr), full, k.ID, line)
+	return nil
+}
+
+func addrPort(addr string) string {
+	if i := strings.LastIndex(addr, ":"); i >= 0 {
+		return addr[i:]
+	}
+	return ":" + addr
 }

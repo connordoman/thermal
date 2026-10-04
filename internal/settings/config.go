@@ -9,14 +9,17 @@ type Configs = map[string]Config
 
 var settings = Configs{
 	"printer": NewPrinterConfig(),
+	"server":  NewServerConfig(),
 }
 
 type MappedSettings struct {
 	Printer *PrinterConfig
+	Server  *ServerConfig
 }
 
 var Global = &MappedSettings{
 	Printer: settings["printer"].(*PrinterConfig),
+	Server:  settings["server"].(*ServerConfig),
 }
 
 func Load() []error {

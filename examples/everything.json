@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "metadata": { "label": "Every block type" },
+  "options": { "cut": "none", "unicode": "image" },
+  "blocks": [
+    { "type": "initialize" },
+    { "type": "heading", "content": "Block tour", "level": 1 },
+    { "type": "heading", "content": "Text and styles", "level": 2 },
+    { "type": "text", "content": "Plain text wraps at the paper width, breaking between words so nothing is split mid-word unless it has to be." },
+    { "type": "text", "content": "Bold, underlined, inverted", "style": { "bold": true, "underline": 2, "invert": true } },
+    { "type": "text", "content": "Font B is smaller", "style": { "font": "B" } },
+    { "type": "text", "content": "Tall", "style": { "height": 3 }, "align": "right" },
+    { "type": "text", "content": "Upside down", "style": { "upside_down": true } },
+    { "type": "text", "content": "No wrapping: the printer breaks this line wherever it runs out of room, mid-word.", "wrap": false },
+    { "type": "group", "style": { "font": "B" }, "align": "center", "blocks": [
+      { "type": "text", "content": "Groups share a style" },
+      { "type": "text", "content": "and children can override it", "style": { "bold": true } }
+    ] },
+    { "type": "box", "content": "Boxes draw a frame around wrapped text.", "align": "center" },
+    { "type": "box", "content": "Double", "double": true },
+    { "type": "list", "items": ["Bulleted", "List items wrap with a hanging indent so they line up nicely"] },
+    { "type": "list", "items": ["One", "Two"], "ordered": true, "start": 9 },
+    { "type": "columns", "columns": [
+      { "content": "Left column text that wraps", "width": 2 },
+      { "content": "Right", "align": "right", "width": 1 }
+    ] },
+    { "type": "table", "headers": ["SKU", "Item", "Qty"], "align": ["left", "left", "right"], "border": true,
+      "rows": [["A-1", "Widget", 3], ["B-22", "Gadget with a longer name", 12.5]] },
+    { "type": "markdown", "content": "Markdown **inside** JSON, with a [link](https://go.dev).", "links": "footnotes" },
+    { "type": "heading", "content": "Unicode", "level": 2 },
+    { "type": "unicode", "content": "Unifont draws anything: 日本語, Ελληνικά, Кириллица, 🎉🍕🐈", "scale": 1.5 },
+    { "type": "utf8", "content": "Inverted and bold", "invert": true, "bold": true, "align": "center", "scale": 2 },
+    { "type": "heading", "content": "Codes", "level": 2 },
+    { "type": "qr_code", "content": "https://example.com", "size": 4, "error_correction": "H" },
+    { "type": "barcode", "symbology": "EAN13", "content": "4006381333931", "hri": "below" },
+    { "type": "pdf417", "content": "PDF417 example" },
+    { "type": "heading", "content": "Images", "level": 2 },
+    { "type": "image", "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAAAAABWESUoAAAAMUlEQVR4nGJhgIL/UJoRjc8EpXHC4aGABZf/GYk1YXgoYGTA4f//xJowmh6GU3oADADNrghEl19+XgAAAABJRU5ErkJggg==", "width": 128, "dither": false },
+    { "type": "heading", "content": "Layout", "level": 2 },
+    { "type": "line_spacing", "dots": 40 },
+    { "type": "text", "content": "Wide line spacing" },
+    { "type": "line_spacing", "dots": "default" },
+    { "type": "margins", "left": 96, "width": 384 },
+    { "type": "text", "content": "Margins narrow the printable area for everything that follows." },
+    { "type": "margins", "left": 0 },
+    { "type": "rule", "char": "=" },
+    { "type": "feed", "dots": 24 },
+    { "type": "page", "height": 200, "direction": "bottom_to_top", "blocks": [
+      { "type": "text", "content": "Page mode rotates text" }
+    ] },
+    { "type": "counter", "set": 41, "digits": 5, "pad": "zeros", "prefix": "Ticket #" },
+    { "type": "code_page", "code_page": 16 },
+    { "type": "text", "content": "Windows-1252: café €5" },
+    { "type": "code_page", "code_page": 0 },
+    { "type": "charset", "charset": 3 },
+    { "type": "text", "content": "UK charset: # prints as a pound sign" },
+    { "type": "charset", "charset": 0 },
+    { "type": "raw", "hex": "1b 45 01 52 61 77 20 62 79 74 65 73 1b 45 00 0a" },
+    { "type": "beep", "tone": 1, "duration": 2 },
+    { "type": "drawer", "pin": 2 },
+    { "type": "cut", "mode": "partial", "feed": 0 }
+  ]
+}

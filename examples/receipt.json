@@ -1,0 +1,28 @@
+{
+  "$schema": "http://localhost:8080/v1/schema/job.json",
+  "version": 1,
+  "metadata": { "label": "Order #1042", "order_id": 1042 },
+  "options": { "cut": "partial", "copies": 1 },
+  "blocks": [
+    { "type": "heading", "content": "DOMAN COFFEE", "level": 1, "align": "center" },
+    { "type": "text", "content": "123 Main St, Vancouver BC", "align": "center", "style": { "font": "B" } },
+    { "type": "datetime", "format": "Mon 2 Jan 2006 15:04", "timezone": "America/Vancouver", "align": "center", "style": { "font": "B" } },
+    { "type": "rule" },
+    { "type": "key_value", "key": "2 × Flat white", "value": "$11.00" },
+    { "type": "key_value", "key": "1 × Almond croissant, warmed", "value": "$4.75" },
+    { "type": "key_value", "key": "Oat milk", "value": "$0.75", "key_style": { "font": "B" }, "value_style": { "font": "B" } },
+    { "type": "rule", "char": "-" },
+    { "type": "key_value", "key": "Subtotal", "value": "$16.50", "leader": "." },
+    { "type": "key_value", "key": "GST 5%", "value": "$0.83", "leader": "." },
+    { "type": "key_value", "key": "TOTAL", "value": "$17.33", "key_style": { "bold": true, "size": 2 }, "value_style": { "bold": true, "size": 2 } },
+    { "type": "feed", "lines": 1 },
+    { "type": "text", "spans": [
+      { "content": "Paid by " },
+      { "content": "VISA •••• 4242", "style": { "bold": true } }
+    ] },
+    { "type": "barcode", "symbology": "CODE128", "content": "ORD-1042", "height": 60, "width": 2 },
+    { "type": "qr_code", "content": "https://example.com/r/1042", "size": 5, "caption": "Rate your visit" },
+    { "type": "text", "content": "Thank you! 🙏 ありがとう", "align": "center" },
+    { "type": "cut", "content": "PARTIAL" }
+  ]
+}
