@@ -1,4 +1,5 @@
 {
+  "$schema": "../internal/render/schema/job.v1.json",
   "version": 1,
   "metadata": { "label": "Every block type" },
   "options": { "cut": "none", "unicode": "image" },
@@ -6,27 +7,58 @@
     { "type": "initialize" },
     { "type": "heading", "content": "Block tour", "level": 1 },
     { "type": "heading", "content": "Text and styles", "level": 2 },
-    { "type": "text", "content": "Plain text wraps at the paper width, breaking between words so nothing is split mid-word unless it has to be." },
-    { "type": "text", "content": "Bold, underlined, inverted", "style": { "fontWeight": "bold", "textDecoration": "underline double", "backgroundColor": "black", "color": "white" } },
+    {
+      "type": "text",
+      "content": "Plain text wraps at the paper width, breaking between words so nothing is split mid-word unless it has to be."
+    },
+    {
+      "type": "text",
+      "content": "Bold, underlined, inverted",
+      "style": {
+        "fontWeight": "bold",
+        "textDecoration": "underline double",
+        "backgroundColor": "black",
+        "color": "white"
+      }
+    },
     { "type": "text", "content": "Font B is smaller", "style": { "fontFamily": "Font B" } },
     { "type": "text", "content": "Tall", "style": { "transform": "scaleY(3)", "textAlign": "right" } },
     { "type": "text", "content": "Spaced out capitals", "style": { "letterSpacing": 4, "textTransform": "uppercase" } },
     { "type": "text", "content": "Upside down", "style": { "transform": "rotate(180deg)" } },
-    { "type": "text", "content": "No wrapping: the printer breaks this line wherever it runs out of room, mid-word.", "wrap": false },
-    { "type": "group", "style": { "fontFamily": "Font B", "textAlign": "center", "lineHeight": 1.5, "marginLeft": 48 }, "blocks": [
-      { "type": "text", "content": "Groups share a style" },
-      { "type": "text", "content": "and children can override it", "style": { "fontWeight": "bold" } }
-    ] },
+    {
+      "type": "text",
+      "content": "No wrapping: the printer breaks this line wherever it runs out of room, mid-word.",
+      "wrap": false
+    },
+    {
+      "type": "group",
+      "style": { "fontFamily": "Font B", "textAlign": "center", "lineHeight": 1.5, "marginLeft": 48 },
+      "blocks": [
+        { "type": "text", "content": "Groups share a style" },
+        { "type": "text", "content": "and children can override it", "style": { "fontWeight": "bold" } }
+      ]
+    },
     { "type": "box", "content": "Boxes draw a frame around wrapped text.", "align": "center" },
     { "type": "box", "content": "Double", "double": true },
     { "type": "list", "items": ["Bulleted", "List items wrap with a hanging indent so they line up nicely"] },
     { "type": "list", "items": ["One", "Two"], "ordered": true, "start": 9 },
-    { "type": "columns", "columns": [
-      { "content": "Left column text that wraps", "width": 2 },
-      { "content": "Right", "align": "right", "width": 1 }
-    ] },
-    { "type": "table", "headers": ["SKU", "Item", "Qty"], "align": ["left", "left", "right"], "border": true,
-      "rows": [["A-1", "Widget", 3], ["B-22", "Gadget with a longer name", 12.5]] },
+    {
+      "type": "columns",
+      "columns": [
+        { "content": "Left column text that wraps", "width": 2 },
+        { "content": "Right", "align": "right", "width": 1 }
+      ]
+    },
+    {
+      "type": "table",
+      "headers": ["SKU", "Item", "Qty"],
+      "align": ["left", "left", "right"],
+      "border": true,
+      "rows": [
+        ["A-1", "Widget", 3],
+        ["B-22", "Gadget with a longer name", 12.5]
+      ]
+    },
     { "type": "markdown", "content": "Markdown **inside** JSON, with a [link](https://go.dev).", "links": "footnotes" },
     { "type": "heading", "content": "Unicode", "level": 2 },
     { "type": "unicode", "content": "Unifont draws anything: 日本語, Ελληνικά, Кириллица, 🎉🍕🐈", "scale": 1.5 },
@@ -36,7 +68,12 @@
     { "type": "barcode", "symbology": "EAN13", "content": "4006381333931", "hri": "below" },
     { "type": "pdf417", "content": "PDF417 example" },
     { "type": "heading", "content": "Images", "level": 2 },
-    { "type": "image", "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAAAAABWESUoAAAAMUlEQVR4nGJhgIL/UJoRjc8EpXHC4aGABZf/GYk1YXgoYGTA4f//xJowmh6GU3oADADNrghEl19+XgAAAABJRU5ErkJggg==", "width": 128, "dither": false },
+    {
+      "type": "image",
+      "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAAAAABWESUoAAAAMUlEQVR4nGJhgIL/UJoRjc8EpXHC4aGABZf/GYk1YXgoYGTA4f//xJowmh6GU3oADADNrghEl19+XgAAAABJRU5ErkJggg==",
+      "width": 128,
+      "dither": false
+    },
     { "type": "heading", "content": "Layout", "level": 2 },
     { "type": "line_spacing", "dots": 40 },
     { "type": "text", "content": "Wide line spacing" },
@@ -46,9 +83,12 @@
     { "type": "margins", "left": 0 },
     { "type": "rule", "char": "=" },
     { "type": "feed", "dots": 24 },
-    { "type": "page", "height": 200, "direction": "bottom_to_top", "blocks": [
-      { "type": "text", "content": "Page mode rotates text" }
-    ] },
+    {
+      "type": "page",
+      "height": 200,
+      "direction": "bottom_to_top",
+      "blocks": [{ "type": "text", "content": "Page mode rotates text" }]
+    },
     { "type": "counter", "set": 41, "digits": 5, "pad": "zeros", "prefix": "Ticket #" },
     { "type": "code_page", "code_page": 16 },
     { "type": "text", "content": "Windows-1252: café €5" },

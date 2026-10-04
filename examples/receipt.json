@@ -1,10 +1,10 @@
 {
-  "$schema": "http://localhost:8080/v1/schema/job.json",
+  "$schema": "../internal/render/schema/job.v1.json",
   "version": 1,
   "metadata": { "label": "Order #1042", "order_id": 1042 },
   "options": { "cut": "partial", "copies": 1 },
   "blocks": [
-    { "type": "heading", "content": "DOMAN COFFEE", "level": 1, "align": "center" },
+    { "type": "heading", "content": "YUMMY COFFEE", "level": 1, "align": "center" },
     { "type": "text", "content": "123 Main St, Vancouver BC", "align": "center", "style": { "fontFamily": "Font B" } },
     {
       "type": "datetime",
@@ -12,6 +12,13 @@
       "timezone": "America/Vancouver",
       "align": "center",
       "style": { "fontFamily": "Font B" }
+    },
+    {
+      "type": "text",
+      "content": "Your Barista: Connor",
+      "style": {
+        "textAlign": "center"
+      }
     },
     { "type": "rule" },
     { "type": "key_value", "key": "2 × Flat white", "value": "$11.00" },
