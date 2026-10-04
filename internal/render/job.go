@@ -3,6 +3,7 @@ package render
 import (
 	"context"
 	"fmt"
+	"github.com/connordoman/escpos/unifont"
 	"image"
 	"strings"
 	"sync/atomic"
@@ -118,9 +119,9 @@ func RenderText(env *Env, text string, o TextOptions, f Finish) ([]byte, error) 
 }
 
 // RenderUnicodeText draws text as an image so every character prints.
-func RenderUnicodeText(env *Env, text string, o UnicodeOptions, f Finish) ([]byte, error) {
+func RenderUnicodeText(env *Env, text string, o unifont.Options, f Finish) ([]byte, error) {
 	b, _ := env.NewJob()
-	if err := PrintUnicode(b, strings.TrimRight(text, "\n"), o); err != nil {
+	if err := unifont.Print(b, strings.TrimRight(text, "\n"), o); err != nil {
 		return nil, err
 	}
 	f.Apply(b)

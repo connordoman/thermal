@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/connordoman/escpos/unifont"
 	"strconv"
 	"strings"
 	"time"
@@ -237,7 +238,7 @@ func (r *docRenderer) text(spans []layout.Span, first, rest string, align escpos
 		if len(spans) > 0 {
 			st = spans[0].Style
 		}
-		return PrintUnicode(r.b, spansText(spans), UnicodeOptions{
+		return unifont.Print(r.b, spansText(spans), unifont.Options{
 			Scale: 1.5 * float64(max(st.Height, 1)), Bold: st.Bold, Invert: st.Invert,
 			Align: align, NoWrap: !wrap, FirstPrefix: first, RestPrefix: rest,
 		})
@@ -342,7 +343,7 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 		if r.inPage {
 			return errors.New("unicode blocks are images, which do not print in page mode")
 		}
-		return PrintUnicode(b, v.Content, UnicodeOptions{
+		return unifont.Print(b, v.Content, unifont.Options{
 			Scale: v.Scale, Bold: v.Bold, Invert: v.Invert, Align: parseAlign(v.Align, sc.align),
 			LineGap: v.LineGap, NoWrap: v.Wrap != nil && !*v.Wrap,
 			Weight: v.Weight, SolidEmoji: v.Solid,
@@ -907,10 +908,10 @@ func (r *docRenderer) table(t layout.Table) error {
 	if r.useUnicode(all) {
 		cols := r.w.Width / 12
 		var lines []string
-		for _, l := range t.Layout(cols, UnicodeCells) {
+		for _, l := range t.Layout(cols, unifont.Cells) {
 			lines = append(lines, spansText(l))
 		}
-		return PrintUnicode(r.b, strings.Join(lines, "\n"), UnicodeOptions{Scale: 1.5, NoWrap: true})
+		return unifont.Print(r.b, strings.Join(lines, "\n"), unifont.Options{Scale: 1.5, NoWrap: true})
 	}
 	r.w.Table(t)
 	r.w.Apply(layout.Style{})

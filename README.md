@@ -312,8 +312,7 @@ Until `github.com/connordoman/escpos` is published, `thermal` builds against `..
 | Path                   |                                                                                           |
 | ---------------------- | ----------------------------------------------------------------------------------------- |
 | `internal/server`      | Gin routes and handlers                                                                   |
-| `internal/render`      | Text, Markdown, Unicode and block-document renderers; image loading; the JSON Schema      |
-| `internal/render/font` | GNU Unifont (SIL OFL 1.1, see its NOTICE)                                                 |
+| `internal/render`      | Text, Markdown, Unicode and block-document renderers; image loading; the JSON Schema (layout and Unifont come from `escpos/layout` and `escpos/unifont`) |
 | `internal/queue`       | The job queue and print worker                                                            |
 | `internal/device`      | Printer connection management                                                             |
 | `internal/auth`        | API keys                                                                                  |

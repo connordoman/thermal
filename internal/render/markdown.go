@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/connordoman/escpos/unifont"
 	"strings"
 
 	"github.com/connordoman/escpos"
@@ -160,7 +161,7 @@ func (r *mdRenderer) leaf(spans []layout.Span, align escpos.Align, scale float64
 		for _, s := range spans {
 			bold = bold || s.Style.Bold
 		}
-		o := UnicodeOptions{
+		o := unifont.Options{
 			Scale: 1.5 * scale, Bold: bold, Align: align,
 			FirstPrefix: first, RestPrefix: rest,
 		}
@@ -168,7 +169,7 @@ func (r *mdRenderer) leaf(spans []layout.Span, align escpos.Align, scale float64
 			zero := 0
 			o.LineGap = &zero
 		}
-		return PrintUnicode(r.w.B, spansText(spans), o)
+		return unifont.Print(r.w.B, spansText(spans), o)
 	}
 	r.w.SetAlign(align)
 	r.w.Paragraph(spans, []layout.Span{{Text: first}}, []layout.Span{{Text: rest}})
@@ -245,7 +246,7 @@ func (r *mdRenderer) block(n ast.Node) error {
 		body := strings.TrimRight(code.String(), "\n")
 		first, rest := r.prefixes()
 		if r.opts.Unicode == UnicodeImage && NeedsUnicode(body) {
-			if err := PrintUnicode(r.w.B, body, UnicodeOptions{Scale: 1, FirstPrefix: first, RestPrefix: rest}); err != nil {
+			if err := unifont.Print(r.w.B, body, unifont.Options{Scale: 1, FirstPrefix: first, RestPrefix: rest}); err != nil {
 				return err
 			}
 		} else {
@@ -428,12 +429,12 @@ func (r *mdRenderer) table(n *east.Table) error {
 	if r.opts.Unicode == UnicodeImage && unicode {
 		// Lay the table out in Unifont cells; at scale 1.5 a cell is the
 		// same 12 dots as a Font A character.
-		cols := r.w.Width/12 - UnicodeCells(first)
+		cols := r.w.Width/12 - unifont.Cells(first)
 		var lines []string
-		for _, l := range t.Layout(cols, UnicodeCells) {
+		for _, l := range t.Layout(cols, unifont.Cells) {
 			lines = append(lines, spansText(l))
 		}
-		return PrintUnicode(r.w.B, strings.Join(lines, "\n"), UnicodeOptions{
+		return unifont.Print(r.w.B, strings.Join(lines, "\n"), unifont.Options{
 			Scale: 1.5, NoWrap: true, FirstPrefix: first, RestPrefix: rest,
 		})
 	}

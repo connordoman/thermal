@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/connordoman/escpos/unifont"
 	"image/png"
 	"io"
 	"net/http"
@@ -383,7 +384,7 @@ func (s *Server) printMarkdown(c *gin.Context) {
 func (s *Server) printUnicode(c *gin.Context) {
 	q := &query{c: c}
 	o := q.jobOptions()
-	uo := render.UnicodeOptions{
+	uo := unifont.Options{
 		Scale:  q.float("scale", 2, 1, 8),
 		Bold:   q.bool("bold", false),
 		Invert: q.bool("invert", false),
@@ -413,7 +414,7 @@ func (s *Server) printUnicode(c *gin.Context) {
 	}
 	if format == "png" {
 		// A preview: nothing is queued.
-		img, err := render.RenderUnicode(strings.TrimRight(string(body), "\n"), s.Device.PaperWidth(), uo)
+		img, err := unifont.Render(strings.TrimRight(string(body), "\n"), s.Device.PaperWidth(), uo)
 		if err != nil {
 			renderError(c, err)
 			return

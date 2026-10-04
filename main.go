@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/connordoman/escpos/unifont"
 	"io/fs"
 	"log"
 	"net"
@@ -21,7 +22,6 @@ import (
 	"github.com/connordoman/thermal/internal/device"
 	"github.com/connordoman/thermal/internal/queue"
 	"github.com/connordoman/thermal/internal/render"
-	"github.com/connordoman/thermal/internal/render/font"
 	"github.com/connordoman/thermal/internal/server"
 	"github.com/connordoman/thermal/internal/settings"
 	"github.com/connordoman/thermal/internal/store"
@@ -100,7 +100,7 @@ func main() {
 
 	// Parse the Unicode font now rather than during the first request.
 	go func() {
-		if _, err := font.Load(); err != nil {
+		if _, err := unifont.Load(); err != nil {
 			console.Error("loading font: %v", err)
 		}
 	}()
