@@ -3,6 +3,7 @@ package render
 import (
 	"context"
 	"errors"
+	"github.com/connordoman/escpos/escpostest"
 	"os"
 	"strings"
 	"testing"
@@ -25,7 +26,7 @@ func renderExample(t *testing.T, name string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := describe(out)
+	d := escpostest.Describe(out)
 	if os.Getenv("SHOW") != "" {
 		t.Log("\n" + d)
 	}
@@ -39,10 +40,10 @@ func TestReceiptExample(t *testing.T) {
 		"Sat 3 Oct 2026 02:30", // America/Vancouver
 		"2 x Flat white",
 		"Subtotal ...",
-		"<BARCODE 73",
+		"<GS k 73",
 		"<GS ( k",
-		"<RASTER 576x", // the Unicode line falls back to an image
-		"<CUT 66 0>",
+		"(576×", // the Unicode line falls back to an image
+		"<GS V 66 0>",
 	} {
 		if !strings.Contains(d, want) {
 			t.Errorf("output lacks %q", want)
@@ -53,8 +54,8 @@ func TestReceiptExample(t *testing.T) {
 func TestEverythingExample(t *testing.T) {
 	d := renderExample(t, "everything.json")
 	for _, want := range []string{
-		"╔", "┌", "│", "9. One", "<ESC t 16>", "<ESC R 3>", "Raw bytes", "<BEEP [1 2]>", "<PULSE [0 50 250]>",
-		"<ESC 'L'>", "<0c>", "Ticket #",
+		"╔", "┌", "│", "9. One", "<ESC t 16>", "<ESC R 3>", "Raw bytes", "<ESC B 1 2>", "<ESC p 0 50 250>",
+		"<ESC L>", "<FF>", "Ticket #",
 	} {
 		if !strings.Contains(d, want) {
 			t.Errorf("output lacks %q", want)
@@ -97,7 +98,7 @@ func TestBareBlockArray(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d := describe(out); !strings.Contains(d, "hello, world") || !strings.Contains(d, "<CUT 66 0>") {
+	if d := escpostest.Describe(out); !strings.Contains(d, "hello, world") || !strings.Contains(d, "<GS V 66 0>") {
 		t.Errorf("unexpected output %q", d)
 	}
 }

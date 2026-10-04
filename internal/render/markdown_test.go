@@ -2,6 +2,7 @@ package render
 
 import (
 	"context"
+	"github.com/connordoman/escpos/escpostest"
 	"os"
 	"strings"
 	"testing"
@@ -15,12 +16,12 @@ func TestMarkdown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := describe(out)
+	d := escpostest.Describe(out)
 	if os.Getenv("SHOW") != "" {
 		t.Log("\n" + d)
 	}
 	for _, want := range []string{
-		"<SIZE 11>Receipt Title",
+		"<GS ! 17>Receipt Title",
 		"<ESC E 1>bold",
 		"<ESC - 1>italic",
 		"<GS B 1>code",
@@ -38,26 +39,9 @@ func TestMarkdown(t *testing.T) {
 			t.Errorf("output lacks %q", want)
 		}
 	}
-	for _, line := range strings.Split(d, "\n") {
-		plain := stripCommands(line)
-		if n := len([]rune(strings.TrimSuffix(plain, "⏎"))); n > 64 {
-			t.Errorf("line too long (%d): %q", n, plain)
+	for _, line := range escpostest.Lines(out) {
+		if n := len([]rune(line)); n > 64 {
+			t.Errorf("line too long (%d): %q", n, line)
 		}
 	}
-}
-
-func stripCommands(s string) string {
-	var b strings.Builder
-	depth := 0
-	for _, r := range s {
-		switch {
-		case r == '<':
-			depth++
-		case r == '>' && depth > 0:
-			depth--
-		case depth == 0:
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
 }
