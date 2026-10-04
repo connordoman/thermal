@@ -195,6 +195,14 @@
             384,
             "auto"
           ]
+        },
+        "borderStyle": {
+          "type": "string",
+          "enum": [
+            "solid",
+            "double"
+          ],
+          "description": "Lines of a box drawn around the block (alert): solid (┌─┐) or double (╔═╗). Not inherited."
         }
       }
     },
@@ -213,6 +221,7 @@
       "properties": {
         "type": {
           "enum": [
+            "alert",
             "barcode",
             "beep",
             "box",
@@ -696,6 +705,21 @@
           },
           "then": {
             "$ref": "#/$defs/block_self_test"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "alert"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/block_alert"
           }
         }
       ]
@@ -1923,6 +1947,64 @@
         "type"
       ],
       "description": "Print the printer's self-test page."
+    },
+    "block_alert": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "variant"
+      ],
+      "description": "A GitHub-style alert: a box with its title set into the top border, like an HTML fieldset (┌─ NOTE ───┐). The same as > [!NOTE] in Markdown.",
+      "properties": {
+        "type": {
+          "const": "alert"
+        },
+        "variant": {
+          "enum": [
+            "NOTE",
+            "TIP",
+            "IMPORTANT",
+            "WARNING",
+            "CAUTION",
+            "note",
+            "tip",
+            "important",
+            "warning",
+            "caution"
+          ],
+          "description": "The kind of alert, which is also the title unless title is given."
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "Replaces the variant name in the top border. Printed in capitals and underlined."
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 65536,
+          "description": "Plain text inside the box; newlines start new lines."
+        },
+        "markdown": {
+          "type": "string",
+          "maxLength": 262144,
+          "description": "Markdown inside the box, after content: paragraphs, lists, code, tables, even nested alerts."
+        },
+        "links": {
+          "enum": [
+            "inline",
+            "footnotes",
+            "qr",
+            "hide"
+          ],
+          "default": "inline",
+          "description": "How links in markdown are printed."
+        },
+        "style": {
+          "$ref": "#/$defs/style",
+          "description": "Styles the box: fontWeight bold draws heavier lines, borderStyle double draws double lines, marginLeft and width narrow it. Other text properties are inherited by the contents, which are always left-aligned."
+        }
+      }
     }
   }
 }

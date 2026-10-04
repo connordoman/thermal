@@ -173,3 +173,44 @@ func TestDefaultCutFeed(t *testing.T) {
 		}
 	}
 }
+
+func TestAlertBlock(t *testing.T) {
+	doc := `[
+		{"type": "alert", "variant": "note", "content": "Plain text inside the box."},
+		{"type": "alert", "variant": "WARNING", "title": "Heads up", "style": {"borderStyle": "double", "fontWeight": "bold"},
+		 "content": "First line.", "markdown": "- a list\n- in the box"},
+		{"type": "alert", "variant": "TIP", "style": {"marginLeft": 96}, "content": "Narrow"}
+	]`
+	parsed, err := ParseDocument([]byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := RenderDocument(context.Background(), NewEnv(576, nil), parsed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := escpostest.Lines(out)
+	if os.Getenv("SHOW") != "" {
+		t.Log("\n" + strings.Join(lines, "\n"))
+	}
+	text := strings.Join(lines, "\n")
+	for _, want := range []string{
+		"┌─ NOTE ─", "│ Plain text inside the box.", "╔═ HEADS UP ═", "║ First line.", "║ - a list", "╚═══",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("output lacks %q", want)
+		}
+	}
+	for _, l := range lines {
+		if n := len([]rune(l)); strings.ContainsAny(l, "│║") && n != 48 && n != 40 {
+			t.Errorf("box line is %d columns: %q", n, l)
+		}
+	}
+	d := escpostest.Describe(out)
+	if !strings.Contains(d, "<ESC E 1>╔═ <ESC - 1>HEADS UP") || !strings.Contains(d, "<GS L 96 0>") {
+		t.Errorf("bold double box or margin missing:\n%s", d)
+	}
+	if _, err := ParseDocument([]byte(`[{"type":"alert","variant":"DANGER"}]`)); err == nil {
+		t.Error("unknown variant accepted")
+	}
+}

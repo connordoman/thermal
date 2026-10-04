@@ -40,6 +40,8 @@
     },
     { "type": "box", "content": "Boxes draw a frame around wrapped text.", "align": "center" },
     { "type": "box", "content": "Double", "double": true },
+    { "type": "alert", "variant": "NOTE", "content": "Alerts are boxes with their title in the border, like GitHub's > [!NOTE]." },
+    { "type": "alert", "variant": "WARNING", "style": { "borderStyle": "double", "fontWeight": "bold" }, "markdown": "Bold, double lines, and **Markdown** inside:\n\n- one\n- two" },
     { "type": "list", "items": ["Bulleted", "List items wrap with a hanging indent so they line up nicely"] },
     { "type": "list", "items": ["One", "Two"], "ordered": true, "start": 9 },
     {

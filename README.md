@@ -204,6 +204,7 @@ See [`examples/receipt.json`](examples/receipt.json) for a receipt and [`example
 | `table`                                           | Headers, rows, per-column alignment, optional borders                                       |
 | `list`                                            | Bulleted or numbered                                                                        |
 | `box`                                             | Text in a single or double frame                                                            |
+| `alert` | A GitHub-style alert (`variant`: NOTE, TIP, IMPORTANT, WARNING, CAUTION) with its title set into the box's top border; `content` and/or `markdown` inside, and `style` for the box (`fontWeight: bold` for heavier lines, `borderStyle: double`, `marginLeft`, `width`) |
 | `rule`                                            | A full-width line of any character                                                          |
 | `feed`                                            | Lines or dots of paper                                                                      |
 | `qr_code`                                         | QR code with size, error correction and an optional caption                                 |
@@ -240,6 +241,7 @@ See [`examples/receipt.json`](examples/receipt.json) for a receipt and [`example
 | `whiteSpace` | `nowrap` or `pre` turns word wrapping off |
 | `transform` | `scale(2, 1)`, `scaleX()`, `scaleY()` for unequal width and height; `rotate(90deg)`, `rotate(180deg)` |
 | `marginLeft`, `width` | The block's left margin and printable width (GS L, GS W) |
+| `borderStyle` | `solid` or `double` lines for blocks drawn in a box (`alert`) |
 
 Inside a `group`, children inherit the group's style as in CSS, and its `lineHeight` and margins apply while they print. A block's `align` field, where it has one, overrides `textAlign`. Values a printer cannot reproduce, such as `color: red` or `rotate(45deg)`, are rejected with the block's path.
 

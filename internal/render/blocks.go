@@ -314,6 +314,47 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 		st, _ := headingStyle(max(v.Level, 1))
 		return r.text([]layout.Span{{Text: Clean(v.Content), Style: st}}, "", "", parseAlign(v.Align, sc.css.Align), true)
 
+	case "alert":
+		var v struct {
+			Type     string          `json:"type"`
+			Variant  string          `json:"variant"`
+			Title    string          `json:"title"`
+			Content  string          `json:"content"`
+			Markdown string          `json:"markdown"`
+			Links    string          `json:"links"`
+			Style    *css.Properties `json:"style"`
+		}
+		if err := decode(&v); err != nil {
+			return err
+		}
+		as, err := r.resolve(v.Style, sc)
+		if err != nil {
+			return err
+		}
+		title := v.Title
+		if title == "" {
+			title = v.Variant
+		}
+		um := r.unicode
+		if r.inPage {
+			um = UnicodeTransliterate
+		}
+		w.SetAlign(escpos.AlignLeft)
+		return r.around(as, sc.css, func() error {
+			err := WriteAlert(r.ctx, r.env, w, Alert{
+				Title:  title,
+				Double: as.Border == "double",
+				// The box takes the style's weight; the body inherits
+				// everything, as text in a bordered element does.
+				Border:   layout.Style{Bold: as.Style.Bold, DoubleStrike: as.Style.DoubleStrike},
+				Base:     as.Style,
+				Text:     as.Text(v.Content),
+				Markdown: v.Markdown,
+			}, MarkdownOptions{Links: LinkMode(v.Links), Unicode: um, Images: !r.inPage})
+			w.Apply(layout.Style{})
+			return err
+		})
+
 	case "markdown":
 		var v struct {
 			Type    string `json:"type"`
