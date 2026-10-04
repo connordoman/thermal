@@ -201,7 +201,9 @@ func (r *mdRenderer) leaf(spans []layout.Span, align escpos.Align, scale float64
 			bold = bold || s.Style.Bold
 		}
 		o := unifont.Options{
-			Scale: 1.5 * scale, Bold: bold, Align: align,
+			// 2 dots per font pixel matches Font A's height and prints
+			// evenly; bullets and bars stay on the printer's 12-dot grid.
+			Scale: 2 * scale, EdgeScaleX: 1.5, Bold: bold, Align: align,
 			FirstPrefix: first, RestPrefix: rest, Suffix: right,
 		}
 		if r.inFrame() {
@@ -292,7 +294,7 @@ func (r *mdRenderer) block(n ast.Node) error {
 		e := r.prefixes()
 		first, rest, right := e.text()
 		if r.opts.Unicode == UnicodeImage && NeedsUnicode(body) {
-			if err := unifont.Print(r.w.B, body, unifont.Options{Scale: 1, FirstPrefix: first, RestPrefix: rest, Suffix: right}); err != nil {
+			if err := unifont.Print(r.w.B, body, unifont.Options{Scale: 1, EdgeScaleX: 1.5, FirstPrefix: first, RestPrefix: rest, Suffix: right}); err != nil {
 				return err
 			}
 		} else {
@@ -624,7 +626,8 @@ func (r *mdRenderer) table(n *east.Table) error {
 			lines = append(lines, spansText(l))
 		}
 		return unifont.Print(r.w.B, strings.Join(lines, "\n"), unifont.Options{
-			Scale: 1.5, NoWrap: true, FirstPrefix: first, RestPrefix: rest, Suffix: right,
+			// Columns need Font A's 12-dot cells: 1.5 wide, 2 tall.
+			ScaleX: 1.5, ScaleY: 2, NoWrap: true, FirstPrefix: first, RestPrefix: rest, Suffix: right,
 		})
 	}
 	if first == "" && rest == "" && right == "" {

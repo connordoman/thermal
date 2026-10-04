@@ -148,7 +148,7 @@ GitHub-flavoured Markdown, printed with the printer's own fonts and styles:
 | `~~strike~~`                          | `~strike~` (printers cannot strike through)                                                              |
 | Lists, task lists, quotes             | Bullets with hanging indents, `[x]`/`[ ]`, `│` bars; all nest                                            |
 | `> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]` | A box with the underlined title set into its top border, fieldset-style: `┌─ NOTE ───┐` |
-| Tables                                | Columns sized to fit, cells wrap, alignment honoured                                                     |
+| Tables | Full width, each column getting a share in proportion to its widest cell; cells wrap when the content is wider than the paper; alignment honoured |
 | `---`                                 | A full-width rule                                                                                        |
 | `![alt](url)`                         | The image, fetched with the same safeguards as image blocks (`images=false` prints the alt text instead) |
 | Links                                 | See `links` below                                                                                        |
@@ -163,7 +163,7 @@ Options:
 
 Any Unicode text, drawn as an image in [GNU Unifont](https://unifoundry.com/unifont/). It is a bitmap font that covers every assigned code point, including emoji, kanji, hangul, Cyrillic, Greek, symbols and box drawing, and its pixel lettering looks at home on a thermal print head. Lines wrap at spaces, and anywhere between CJK characters following Japanese line-breaking rules.
 
-Options: `scale` (1–8, default 2; 1.5 matches Font A's 12×24 cells), `bold`, `invert`, `align`, `line_gap`, `wrap=false`, and `format=png` to get a PNG preview instead of printing.
+Options: `scale` (1–8, default 2, which matches the height of Font A and prints each font pixel as an even 2×2 block), `bold`, `invert`, `align`, `line_gap`, `wrap=false`, and `format=png` to get a PNG preview instead of printing.
 
 Arabic and Hebrew are drawn left to right without joining, and emoji print in monochrome without skin-tone or ZWJ combinations.
 

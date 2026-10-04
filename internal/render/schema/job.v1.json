@@ -947,7 +947,7 @@
           "minimum": 1,
           "maximum": 8,
           "default": 2,
-          "description": "Dots per font pixel. 1.5 matches the printer's Font A."
+          "description": "Dots per font pixel. The default, 2, matches the height of the printer's Font A and prints each pixel as an even 2×2 block."
         },
         "bold": {
           "type": "boolean",
@@ -975,7 +975,7 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 4,
-          "description": "Extra dots added to each stroke of non-emoji glyphs. Default 1 below scale 3, matching the printer's own fonts."
+          "description": "Extra dots added to each stroke of non-emoji glyphs. Default 1 below scale 2, where some strokes would otherwise print a single dot wide."
         },
         "solid_emoji": {
           "type": "boolean",
@@ -1005,7 +1005,7 @@
           "minimum": 1,
           "maximum": 8,
           "default": 2,
-          "description": "Dots per font pixel. 1.5 matches the printer's Font A."
+          "description": "Dots per font pixel. The default, 2, matches the height of the printer's Font A and prints each pixel as an even 2×2 block."
         },
         "bold": {
           "type": "boolean",
@@ -1033,7 +1033,7 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 4,
-          "description": "Extra dots added to each stroke of non-emoji glyphs. Default 1 below scale 3, matching the printer's own fonts."
+          "description": "Extra dots added to each stroke of non-emoji glyphs. Default 1 below scale 2, where some strokes would otherwise print a single dot wide."
         },
         "solid_emoji": {
           "type": "boolean",
@@ -1246,7 +1246,7 @@
         "type",
         "rows"
       ],
-      "description": "A table with optional headers. Columns are sized to their content and wrap when the table is too wide."
+      "description": "A table with optional headers. It fills the line, each column getting a share in proportion to its widest cell; when the content is wider than the paper, cells wrap."
     },
     "block_list": {
       "type": "object",

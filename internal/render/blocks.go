@@ -239,7 +239,10 @@ func (r *docRenderer) text(spans []layout.Span, first, rest string, align escpos
 			st = spans[0].Style
 		}
 		return unifont.Print(r.b, spansText(spans), unifont.Options{
-			Scale: 1.5 * float64(max(st.Height, 1)), Bold: st.Bold, Invert: st.Invert,
+			// 2 dots per font pixel matches Font A's height and prints
+			// evenly; prefixes stay on the printer's 12-dot grid.
+			ScaleX: 2 * float64(max(st.Width, 1)), ScaleY: 2 * float64(max(st.Height, 1)), EdgeScaleX: 1.5,
+			Bold: st.Bold, Invert: st.Invert,
 			Align: align, NoWrap: !wrap, FirstPrefix: first, RestPrefix: rest,
 		})
 	}
@@ -1021,7 +1024,8 @@ func (r *docRenderer) table(t layout.Table) error {
 		for _, l := range t.Layout(cols, unifont.Cells) {
 			lines = append(lines, spansText(l))
 		}
-		return unifont.Print(r.b, strings.Join(lines, "\n"), unifont.Options{Scale: 1.5, NoWrap: true})
+		// Columns need Font A's 12-dot cells: 1.5 wide, 2 tall.
+		return unifont.Print(r.b, strings.Join(lines, "\n"), unifont.Options{ScaleX: 1.5, ScaleY: 2, NoWrap: true})
 	}
 	r.w.Table(t)
 	r.w.Apply(layout.Style{})
