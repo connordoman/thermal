@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/connordoman/escpos"
+	"github.com/connordoman/escpos/layout"
 	"github.com/connordoman/thermal/internal/console"
 	"github.com/connordoman/thermal/internal/render"
 	"github.com/connordoman/thermal/internal/store"
@@ -313,7 +314,7 @@ func (s *Server) printText(c *gin.Context) {
 	o := q.jobOptions()
 	size := uint8(q.int("size", 1, 1, 8))
 	to := render.TextOptions{
-		Style: render.Style{
+		Style: layout.Style{
 			Bold:      q.bool("bold", false),
 			Underline: uint8(q.int("underline", 0, 0, 2)),
 			Invert:    q.bool("invert", false),

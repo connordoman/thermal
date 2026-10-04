@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/connordoman/escpos"
+	"github.com/connordoman/escpos/layout"
 )
 
 // Document is a parsed block document.
@@ -83,7 +84,7 @@ const (
 
 // scope is the style and alignment inherited from enclosing groups.
 type scope struct {
-	style Style
+	style layout.Style
 	align escpos.Align
 }
 
@@ -91,7 +92,7 @@ type docRenderer struct {
 	ctx     context.Context
 	env     *Env
 	b       *escpos.Builder
-	w       *Writer
+	w       *layout.Writer
 	unicode UnicodeMode
 	count   int
 	inPage  bool
@@ -110,7 +111,7 @@ func RenderDocument(ctx context.Context, env *Env, doc *Document) ([]byte, error
 	if err := r.blocks(doc.Blocks, scope{}, "/blocks", 0); err != nil {
 		return nil, err
 	}
-	w.Apply(Style{})
+	w.Apply(layout.Style{})
 	f := doc.Finish()
 	if r.lastCut {
 		f.Cut, f.Feed = CutNone, 0
@@ -141,7 +142,7 @@ func (r *docRenderer) blocks(raw []json.RawMessage, sc scope, path string, depth
 			return &BlockError{p, err}
 		}
 		// Each block starts from the default style.
-		r.w.Apply(Style{})
+		r.w.Apply(layout.Style{})
 	}
 	return nil
 }
@@ -177,7 +178,7 @@ func (u *underline) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-func (j *jsonStyle) apply(s Style) Style {
+func (j *jsonStyle) apply(s layout.Style) layout.Style {
 	if j == nil {
 		return s
 	}
@@ -230,22 +231,22 @@ func (r *docRenderer) useUnicode(s string) bool {
 
 // text prints a paragraph with printer fonts, or as an image if it holds
 // characters the fonts lack.
-func (r *docRenderer) text(spans []Span, first, rest string, align escpos.Align, wrap bool) error {
+func (r *docRenderer) text(spans []layout.Span, first, rest string, align escpos.Align, wrap bool) error {
 	if r.useUnicode(spansText(spans)) {
-		st := Style{}
+		st := layout.Style{}
 		if len(spans) > 0 {
 			st = spans[0].Style
 		}
 		return PrintUnicode(r.b, spansText(spans), UnicodeOptions{
-			Scale: 1.5 * float64(st.height()), Bold: st.Bold, Invert: st.Invert,
+			Scale: 1.5 * float64(max(st.Height, 1)), Bold: st.Bold, Invert: st.Invert,
 			Align: align, NoWrap: !wrap, FirstPrefix: first, RestPrefix: rest,
 		})
 	}
 	r.w.SetAlign(align)
 	if wrap {
-		r.w.Paragraph(spans, []Span{{Text: first}}, []Span{{Text: rest}})
+		r.w.Paragraph(spans, []layout.Span{{Text: first}}, []layout.Span{{Text: rest}})
 	} else {
-		r.w.Line(append([]Span{{Text: first}}, spans...)...)
+		r.w.Line(append([]layout.Span{{Text: first}}, spans...)...)
 	}
 	return nil
 }
@@ -277,12 +278,12 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 			return err
 		}
 		base := v.Style.apply(sc.style)
-		var spans []Span
+		var spans []layout.Span
 		if v.Content != nil {
-			spans = []Span{{*v.Content, base}}
+			spans = []layout.Span{{Text: *v.Content, Style: base}}
 		}
 		for _, s := range v.Spans {
-			spans = append(spans, Span{s.Content, s.Style.apply(base)})
+			spans = append(spans, layout.Span{Text: s.Content, Style: s.Style.apply(base)})
 		}
 		for i := range spans {
 			spans[i].Text = Clean(spans[i].Text)
@@ -300,7 +301,7 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 			return err
 		}
 		st, _ := headingStyle(max(v.Level, 1))
-		return r.text([]Span{{Clean(v.Content), st}}, "", "", parseAlign(v.Align, sc.align), true)
+		return r.text([]layout.Span{{Text: Clean(v.Content), Style: st}}, "", "", parseAlign(v.Align, sc.align), true)
 
 	case "markdown":
 		var v struct {
@@ -319,7 +320,7 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 		err := WriteMarkdown(r.ctx, r.env, w, v.Content, MarkdownOptions{
 			Links: LinkMode(v.Links), Unicode: um, Images: (v.Images == nil || *v.Images) && !r.inPage,
 		})
-		w.Apply(Style{})
+		w.Apply(layout.Style{})
 		return err
 
 	case "unicode", "utf8":
@@ -357,7 +358,7 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 			return err
 		}
 		if v.Lines != nil {
-			w.Apply(Style{})
+			w.Apply(layout.Style{})
 			b.FeedLines(*v.Lines)
 		} else if v.Dots != nil {
 			b.FeedUnits(*v.Dots)
@@ -413,12 +414,14 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 			return err
 		}
 		st := v.Style.apply(sc.style)
-		t := Table{Border: v.Border, Style: st, Rows: [][]string{nil}}
+		t := layout.Table{Border: v.Border, Style: st, Rows: [][]string{nil}}
 		for _, c := range v.Columns {
 			t.Rows[0] = append(t.Rows[0], Clean(c.Content))
 			t.Aligns = append(t.Aligns, parseAlign(c.Align, escpos.AlignLeft))
 			t.Weights = append(t.Weights, max(c.Width, 1))
 		}
+		// Built as a table rather than with Writer.Columns so the Unicode
+		// fallback in r.table applies.
 		return r.table(t)
 
 	case "table":
@@ -435,10 +438,10 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 			return err
 		}
 		st := v.Style.apply(sc.style)
-		hs := v.HeaderStyle.apply(Style{Bold: true})
+		hs := v.HeaderStyle.apply(layout.Style{Bold: true})
 		// Header and body must share character widths to line up.
 		hs.FontB, hs.Width = st.FontB, st.Width
-		t := Table{Border: v.Border, Style: st, HeaderStyle: hs}
+		t := layout.Table{Border: v.Border, Style: st, HeaderStyle: hs}
 		for _, h := range v.Headers {
 			t.Headers = append(t.Headers, Clean(h))
 		}
@@ -488,7 +491,7 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 				m = fmt.Sprintf("%d. ", n)
 				n++
 			}
-			if err := r.text([]Span{{Clean(item), st}}, m, strings.Repeat(" ", len([]rune(m))), escpos.AlignLeft, true); err != nil {
+			if err := r.text([]layout.Span{{Text: Clean(item), Style: st}}, m, strings.Repeat(" ", len([]rune(m))), escpos.AlignLeft, true); err != nil {
 				return err
 			}
 		}
@@ -504,7 +507,7 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 		if err := decode(&v); err != nil {
 			return err
 		}
-		r.box(Clean(v.Content), v.Style.apply(sc.style), parseAlign(v.Align, escpos.AlignLeft), v.Double)
+		w.Box(Clean(v.Content), v.Style.apply(sc.style), parseAlign(v.Align, escpos.AlignLeft), v.Double)
 
 	case "qr_code":
 		var v struct {
@@ -527,7 +530,7 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 		if v.ErrorCorrection != "" {
 			ec = escpos.QRErrorCorrection(v.ErrorCorrection[0])
 		}
-		w.Apply(Style{})
+		w.Apply(layout.Style{})
 		w.SetAlign(parseAlign(v.Align, escpos.AlignCenter))
 		if v.Model == 1 {
 			if err := b.SelectQRCodeModel(escpos.QRModel1); err != nil {
@@ -539,8 +542,8 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 		}
 		b.LineFeed()
 		if v.Caption != "" {
-			w.Line(Span{Clean(v.Caption), Style{FontB: true}})
-			w.Apply(Style{})
+			w.Line(layout.Span{Text: Clean(v.Caption), Style: layout.Style{FontB: true}})
+			w.Apply(layout.Style{})
 		}
 
 	case "barcode":
@@ -578,7 +581,7 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 			}
 			return *p
 		}
-		w.Apply(Style{})
+		w.Apply(layout.Style{})
 		w.SetAlign(parseAlign(v.Align, escpos.AlignCenter))
 		if err := b.SetBarcodeWidth(def(v.Width, 2)); err != nil {
 			return err
@@ -627,7 +630,7 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 		if mode == "" {
 			mode = v.Content
 		}
-		w.Apply(Style{})
+		w.Apply(layout.Style{})
 		if strings.EqualFold(mode, "full") {
 			b.FeedAndFullCut(v.Feed)
 		} else {
@@ -693,7 +696,6 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 	case "initialize":
 		b.Initialize()
 		w.Reset()
-		w.Raw = false
 
 	case "code_page":
 		var v struct {
@@ -704,7 +706,6 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 			return err
 		}
 		b.SelectCodePage(escpos.CodePage(v.CodePage))
-		w.Raw = v.CodePage != 0
 
 	case "charset":
 		var v struct {
@@ -792,7 +793,7 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 			"bottom_to_top": escpos.PageBottomToTop, "right_to_left": escpos.PageRightToLeft,
 			"top_to_bottom": escpos.PageTopToBottom,
 		}[v.Direction]
-		w.Apply(Style{})
+		w.Apply(layout.Style{})
 		b.EnterPageMode()
 		if err := b.SetPageArea(v.X, v.Y, pw, ph); err != nil {
 			return err
@@ -809,7 +810,7 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 		err := r.blocks(v.Blocks, sc, path+"/blocks", depth+1)
 		r.inPage = false
 		w.Width = saved
-		w.Apply(Style{})
+		w.Apply(layout.Style{})
 		b.PrintPageAndExit()
 		return err
 
@@ -871,15 +872,15 @@ func (r *docRenderer) block(raw json.RawMessage, sc scope, path string, depth in
 			}
 			now = now.In(loc)
 		}
-		layout := map[string]string{
+		format := map[string]string{
 			"": "2006-01-02 15:04", "datetime": "2006-01-02 15:04", "date": "2006-01-02",
 			"time": "15:04", "rfc3339": time.RFC3339,
 		}[v.Format]
-		if layout == "" {
-			layout = v.Format
+		if format == "" {
+			format = v.Format
 		}
-		s := Clean(v.Prefix) + now.Format(layout)
-		return r.text([]Span{{s, v.Style.apply(sc.style)}}, "", "", parseAlign(v.Align, sc.align), true)
+		s := Clean(v.Prefix) + now.Format(format)
+		return r.text([]layout.Span{{Text: s, Style: v.Style.apply(sc.style)}}, "", "", parseAlign(v.Align, sc.align), true)
 
 	case "self_test":
 		b.PrintTestPage()
@@ -897,7 +898,7 @@ func ptrOr[T any](p *T, def T) T {
 	return *p
 }
 
-func (r *docRenderer) table(t Table) error {
+func (r *docRenderer) table(t layout.Table) error {
 	all := strings.Join(t.Headers, " ")
 	for _, row := range t.Rows {
 		all += " " + strings.Join(row, " ")
@@ -906,42 +907,14 @@ func (r *docRenderer) table(t Table) error {
 	if r.useUnicode(all) {
 		cols := r.w.Width / 12
 		var lines []string
-		for _, l := range t.layout(cols, UnicodeCells) {
+		for _, l := range t.Layout(cols, UnicodeCells) {
 			lines = append(lines, spansText(l))
 		}
 		return PrintUnicode(r.b, strings.Join(lines, "\n"), UnicodeOptions{Scale: 1.5, NoWrap: true})
 	}
-	if t.Border {
-		r.b.SetLineSpacing(barLineSpacing(t.Style))
-		defer r.b.DefaultLineSpacing()
-	}
 	r.w.Table(t)
-	r.w.Apply(Style{})
+	r.w.Apply(layout.Style{})
 	return nil
-}
-
-func (r *docRenderer) box(content string, st Style, align escpos.Align, double bool) {
-	tl, tr, bl, br, h, v := "┌", "┐", "└", "┘", "─", "│"
-	if double {
-		tl, tr, bl, br, h, v = "╔", "╗", "╚", "╝", "═", "║"
-	}
-	w := r.w
-	cols := w.Width / st.CharWidth()
-	inner := max(cols-4, 1)
-	measure := func(s string) int { return len([]rune(w.prepare(s))) }
-	frame := st
-	frame.Underline, frame.Invert = 0, false
-	w.SetAlign(escpos.AlignLeft)
-	r.b.SetLineSpacing(barLineSpacing(st))
-	defer r.b.DefaultLineSpacing()
-	w.Line(Span{tl + strings.Repeat(h, cols-2) + tr, frame})
-	for _, line := range wrapCells(content, inner, measure) {
-		w.printAtomsKeepSpaces(w.atoms([]Span{
-			{v + " ", frame}, {pad(line, inner, align, measure), st}, {" " + v, frame},
-		}))
-	}
-	w.Line(Span{bl + strings.Repeat(h, cols-2) + br, frame})
-	w.Apply(Style{})
 }
 
 var symbologies = map[string]escpos.BarcodeSystem{
@@ -973,7 +946,7 @@ func (r *docRenderer) barcode(sym, content string, height, width uint8, hri, hri
 	if sys == escpos.BarcodeCode128 && !strings.HasPrefix(content, "{") {
 		content = escpos.Code128(content)
 	}
-	r.w.Apply(Style{})
+	r.w.Apply(layout.Style{})
 	r.w.SetAlign(align)
 	for _, err := range []error{
 		b.SetBarcodeHeight(height), b.SetBarcodeWidth(width), b.SetHRIPosition(pos), b.SetHRIFont(font),

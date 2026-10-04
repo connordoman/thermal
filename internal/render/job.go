@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/connordoman/escpos"
+	"github.com/connordoman/escpos/layout"
 )
 
 // Env holds what renderers need besides the request itself.
@@ -66,10 +67,10 @@ type Finish struct {
 
 // NewJob returns a builder that starts by initialising the printer, so no
 // state leaks between jobs.
-func (e *Env) NewJob() (*escpos.Builder, *Writer) {
+func (e *Env) NewJob() (*escpos.Builder, *layout.Writer) {
 	b := escpos.NewBuilder(e.PaperWidth)
 	b.Initialize()
-	return b, NewWriter(b)
+	return b, layout.New(b)
 }
 
 // Apply ends a job according to f.
@@ -94,7 +95,7 @@ func (f Finish) Apply(b *escpos.Builder) {
 
 // TextOptions controls plain-text jobs.
 type TextOptions struct {
-	Style Style
+	Style layout.Style
 	Align escpos.Align
 	// NoWrap leaves wrapping to the printer, which breaks mid-word.
 	NoWrap bool
@@ -107,7 +108,7 @@ func RenderText(env *Env, text string, o TextOptions, f Finish) ([]byte, error) 
 	s := strings.TrimRight(ASCII(text), "\n")
 	if o.NoWrap {
 		for line := range strings.SplitSeq(s, "\n") {
-			w.Line(Span{line, o.Style})
+			w.Line(layout.Span{Text: line, Style: o.Style})
 		}
 	} else {
 		w.Text(s, o.Style)

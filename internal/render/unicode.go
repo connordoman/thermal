@@ -34,7 +34,7 @@ type UnicodeOptions struct {
 	// NoWrap disables word wrapping; long lines are cut off.
 	NoWrap bool
 	// FirstPrefix and RestPrefix are drawn before the first and following
-	// lines of each paragraph, like Writer.Paragraph.
+	// lines of each paragraph, like layout.Writer.Paragraph.
 	FirstPrefix, RestPrefix string
 }
 

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/connordoman/escpos"
+	"github.com/connordoman/escpos/layout"
 	"github.com/yuin/goldmark"
 	emoji "github.com/yuin/goldmark-emoji"
 	emojiast "github.com/yuin/goldmark-emoji/ast"
@@ -74,7 +75,7 @@ type mdRenderer struct {
 	ctx  context.Context
 	env  *Env
 	src  []byte
-	w    *Writer
+	w    *layout.Writer
 	opts MarkdownOptions
 
 	containers []container
@@ -84,7 +85,7 @@ type mdRenderer struct {
 }
 
 // WriteMarkdown renders GitHub-flavoured Markdown with w.
-func WriteMarkdown(ctx context.Context, env *Env, w *Writer, src string, opts MarkdownOptions) error {
+func WriteMarkdown(ctx context.Context, env *Env, w *layout.Writer, src string, opts MarkdownOptions) error {
 	if opts.Links == "" {
 		opts.Links = LinksInline
 	}
@@ -108,7 +109,7 @@ func (r *mdRenderer) flushGap() {
 		if r.inQuote() {
 			// Keep the quote bar unbroken across paragraphs.
 			first, _ := r.prefixes()
-			r.w.Line(Span{Text: strings.TrimRight(first, " ")})
+			r.w.Line(layout.Span{Text: strings.TrimRight(first, " ")})
 		} else {
 			r.w.B.FeedUnits(blockGap)
 		}
@@ -142,7 +143,7 @@ func (r *mdRenderer) prefixes() (first, rest string) {
 	return f.String(), s.String()
 }
 
-func spansText(spans []Span) string {
+func spansText(spans []layout.Span) string {
 	var b strings.Builder
 	for _, s := range spans {
 		b.WriteString(s.Text)
@@ -151,7 +152,7 @@ func spansText(spans []Span) string {
 }
 
 // leaf prints one block of inline text.
-func (r *mdRenderer) leaf(spans []Span, align escpos.Align, scale float64) error {
+func (r *mdRenderer) leaf(spans []layout.Span, align escpos.Align, scale float64) error {
 	r.flushGap()
 	first, rest := r.prefixes()
 	if r.opts.Unicode == UnicodeImage && NeedsUnicode(spansText(spans)) {
@@ -170,22 +171,22 @@ func (r *mdRenderer) leaf(spans []Span, align escpos.Align, scale float64) error
 		return PrintUnicode(r.w.B, spansText(spans), o)
 	}
 	r.w.SetAlign(align)
-	r.w.Paragraph(spans, []Span{{Text: first}}, []Span{{Text: rest}})
-	r.w.Apply(Style{})
+	r.w.Paragraph(spans, []layout.Span{{Text: first}}, []layout.Span{{Text: rest}})
+	r.w.Apply(layout.Style{})
 	r.w.SetAlign(escpos.AlignLeft)
 	return nil
 }
 
-func headingStyle(level int) (Style, float64) {
+func headingStyle(level int) (layout.Style, float64) {
 	switch level {
 	case 1:
-		return Style{Bold: true, Width: 2, Height: 2}, 2
+		return layout.Style{Bold: true, Width: 2, Height: 2}, 2
 	case 2:
-		return Style{Bold: true, Height: 2}, 1.5
+		return layout.Style{Bold: true, Height: 2}, 1.5
 	case 3:
-		return Style{Bold: true, Underline: 1}, 1
+		return layout.Style{Bold: true, Underline: 1}, 1
 	}
-	return Style{Bold: true}, 1
+	return layout.Style{Bold: true}, 1
 }
 
 func (r *mdRenderer) children(n ast.Node) error {
@@ -217,20 +218,20 @@ func (r *mdRenderer) block(n ast.Node) error {
 			if err := r.images(imgs); err != nil {
 				return err
 			}
-		} else if err := r.leaf(r.inlines(n, Style{}), escpos.AlignLeft, 1); err != nil {
+		} else if err := r.leaf(r.inlines(n, layout.Style{}), escpos.AlignLeft, 1); err != nil {
 			return err
 		}
 		r.gap()
 
 	case *ast.TextBlock: // paragraph in a tight list
-		if err := r.leaf(r.inlines(n, Style{}), escpos.AlignLeft, 1); err != nil {
+		if err := r.leaf(r.inlines(n, layout.Style{}), escpos.AlignLeft, 1); err != nil {
 			return err
 		}
 
 	case *ast.ThematicBreak:
 		r.flushGap()
 		first, _ := r.prefixes()
-		r.w.Line(Span{Text: first + strings.Repeat("─", max(r.w.Width/12-len([]rune(first)), 1))})
+		r.w.Line(layout.Span{Text: first + strings.Repeat("─", max(r.w.Width/12-len([]rune(first)), 1))})
 		r.gap()
 
 	case *ast.CodeBlock, *ast.FencedCodeBlock:
@@ -253,9 +254,9 @@ func (r *mdRenderer) block(n ast.Node) error {
 				if i == 0 {
 					p = first
 				}
-				r.w.Paragraph([]Span{{Text: line, Style: Style{FontB: true}}}, []Span{{Text: p}}, []Span{{Text: rest}})
+				r.w.Paragraph([]layout.Span{{Text: line, Style: layout.Style{FontB: true}}}, []layout.Span{{Text: p}}, []layout.Span{{Text: rest}})
 			}
-			r.w.Apply(Style{})
+			r.w.Apply(layout.Style{})
 		}
 		r.gap()
 
@@ -264,7 +265,7 @@ func (r *mdRenderer) block(n ast.Node) error {
 		outer := !r.inQuote()
 		if outer {
 			// At Font A's height the │ bars of consecutive lines join.
-			r.w.B.SetLineSpacing(barLineSpacing(Style{}))
+			r.w.B.SetLineSpacing(layout.BarLineSpacing(layout.Style{}))
 		}
 		r.containers = append(r.containers, container{first: quoteBar, rest: quoteBar})
 		err := r.children(n)
@@ -310,7 +311,7 @@ func (r *mdRenderer) block(n ast.Node) error {
 
 	case *east.FootnoteList:
 		r.flushGap()
-		r.w.Rule('─', Style{FontB: true})
+		r.w.Rule('─', layout.Style{FontB: true})
 		for fn := n.FirstChild(); fn != nil; fn = fn.NextSibling() {
 			idx := 0
 			if f, ok := fn.(*east.Footnote); ok {
@@ -398,7 +399,7 @@ func plainText(n ast.Node, src []byte) string {
 }
 
 func (r *mdRenderer) table(n *east.Table) error {
-	t := Table{HeaderStyle: Style{Bold: true}}
+	t := layout.Table{HeaderStyle: layout.Style{Bold: true}}
 	for _, a := range n.Alignments {
 		switch a {
 		case east.AlignCenter:
@@ -429,7 +430,7 @@ func (r *mdRenderer) table(n *east.Table) error {
 		// same 12 dots as a Font A character.
 		cols := r.w.Width/12 - UnicodeCells(first)
 		var lines []string
-		for _, l := range t.layout(cols, UnicodeCells) {
+		for _, l := range t.Layout(cols, UnicodeCells) {
 			lines = append(lines, spansText(l))
 		}
 		return PrintUnicode(r.w.B, strings.Join(lines, "\n"), UnicodeOptions{
@@ -441,22 +442,21 @@ func (r *mdRenderer) table(n *east.Table) error {
 		return nil
 	}
 	// Inside a list or quote: lay out narrower and add the prefixes.
-	cols := r.w.Width/12 - len([]rune(rest))
-	measure := func(s string) int { return len([]rune(r.w.prepare(s))) }
-	for i, l := range t.layout(cols, measure) {
+	cols := r.w.Width/12 - r.w.Measure(rest)
+	for i, l := range t.Layout(cols, r.w.Measure) {
 		p := rest
 		if i == 0 {
 			p = first
 		}
-		r.w.printAtomsKeepSpaces(r.w.atoms(append([]Span{{Text: p}}, l...)))
+		r.w.Line(append([]layout.Span{{Text: p}}, l...)...)
 	}
-	r.w.Apply(Style{})
+	r.w.Apply(layout.Style{})
 	return nil
 }
 
 // inlines flattens the inline content of n into styled spans.
-func (r *mdRenderer) inlines(n ast.Node, base Style) []Span {
-	var out []Span
+func (r *mdRenderer) inlines(n ast.Node, base layout.Style) []layout.Span {
+	var out []layout.Span
 	r.inline(n, base, &out)
 	// Collapse runs of whitespace left by soft breaks.
 	for i := range out {
@@ -467,18 +467,18 @@ func (r *mdRenderer) inlines(n ast.Node, base Style) []Span {
 	return out
 }
 
-func (r *mdRenderer) inline(n ast.Node, st Style, out *[]Span) {
+func (r *mdRenderer) inline(n ast.Node, st layout.Style, out *[]layout.Span) {
 	for c := n.FirstChild(); c != nil; c = c.NextSibling() {
 		switch c := c.(type) {
 		case *ast.Text:
-			*out = append(*out, Span{string(c.Segment.Value(r.src)), st})
+			*out = append(*out, layout.Span{Text: string(c.Segment.Value(r.src)), Style: st})
 			if c.HardLineBreak() {
-				*out = append(*out, Span{"\n", st})
+				*out = append(*out, layout.Span{Text: "\n", Style: st})
 			} else if c.SoftLineBreak() {
-				*out = append(*out, Span{" ", st})
+				*out = append(*out, layout.Span{Text: " ", Style: st})
 			}
 		case *ast.String:
-			*out = append(*out, Span{string(c.Value), st})
+			*out = append(*out, layout.Span{Text: string(c.Value), Style: st})
 		case *ast.CodeSpan:
 			s := st
 			s.Invert = true
@@ -493,19 +493,19 @@ func (r *mdRenderer) inline(n ast.Node, st Style, out *[]Span) {
 			r.inline(c, s, out)
 		case *east.Strikethrough:
 			// Printers cannot strike text through; keep the markers.
-			*out = append(*out, Span{"~", st})
+			*out = append(*out, layout.Span{Text: "~", Style: st})
 			r.inline(c, st, out)
-			*out = append(*out, Span{"~", st})
+			*out = append(*out, layout.Span{Text: "~", Style: st})
 		case *ast.Link:
 			label := plainText(c, r.src)
 			r.inline(c, st, out)
 			r.addLink(label, string(c.Destination), st, out)
 		case *ast.AutoLink:
 			label := string(c.Label(r.src))
-			*out = append(*out, Span{label, st})
+			*out = append(*out, layout.Span{Text: label, Style: st})
 			r.addLink(label, string(c.URL(r.src)), st, out)
 		case *ast.Image:
-			*out = append(*out, Span{"[image: " + plainText(c, r.src) + "]", st})
+			*out = append(*out, layout.Span{Text: "[image: " + plainText(c, r.src) + "]", Style: st})
 		case *ast.RawHTML:
 			var raw strings.Builder
 			for i := range c.Segments.Len() {
@@ -514,18 +514,18 @@ func (r *mdRenderer) inline(n ast.Node, st Style, out *[]Span) {
 			}
 			tag := strings.ToLower(strings.ReplaceAll(raw.String(), " ", ""))
 			if tag == "<br>" || tag == "<br/>" {
-				*out = append(*out, Span{"\n", st})
+				*out = append(*out, layout.Span{Text: "\n", Style: st})
 			}
 		case *east.TaskCheckBox:
 			if c.IsChecked {
-				*out = append(*out, Span{"[x] ", st})
+				*out = append(*out, layout.Span{Text: "[x] ", Style: st})
 			} else {
-				*out = append(*out, Span{"[ ] ", st})
+				*out = append(*out, layout.Span{Text: "[ ] ", Style: st})
 			}
 		case *emojiast.Emoji:
-			*out = append(*out, Span{string(c.Value.Unicode), st})
+			*out = append(*out, layout.Span{Text: string(c.Value.Unicode), Style: st})
 		case *east.FootnoteLink:
-			*out = append(*out, Span{fmt.Sprintf("[^%d]", c.Index), st})
+			*out = append(*out, layout.Span{Text: fmt.Sprintf("[^%d]", c.Index), Style: st})
 		case *east.FootnoteBacklink:
 		default:
 			r.inline(c, st, out)
@@ -533,7 +533,7 @@ func (r *mdRenderer) inline(n ast.Node, st Style, out *[]Span) {
 	}
 }
 
-func (r *mdRenderer) addLink(label, url string, st Style, out *[]Span) {
+func (r *mdRenderer) addLink(label, url string, st layout.Style, out *[]layout.Span) {
 	if url == "" || url == label || strings.TrimPrefix(url, "mailto:") == label {
 		if r.opts.Links != LinksQR {
 			return
@@ -541,10 +541,10 @@ func (r *mdRenderer) addLink(label, url string, st Style, out *[]Span) {
 	}
 	switch r.opts.Links {
 	case LinksInline:
-		*out = append(*out, Span{" (" + url + ")", Style{FontB: true, Bold: st.Bold}})
+		*out = append(*out, layout.Span{Text: " (" + url + ")", Style: layout.Style{FontB: true, Bold: st.Bold}})
 	case LinksFootnotes, LinksQR:
 		r.links = append(r.links, link{label, url})
-		*out = append(*out, Span{fmt.Sprintf("[%d]", len(r.links)), st})
+		*out = append(*out, layout.Span{Text: fmt.Sprintf("[%d]", len(r.links)), Style: st})
 	}
 }
 
@@ -554,23 +554,23 @@ func (r *mdRenderer) printLinks() error {
 	}
 	r.pendingGap = true
 	r.flushGap()
-	r.w.Rule('─', Style{FontB: true})
+	r.w.Rule('─', layout.Style{FontB: true})
 	for i, l := range r.links {
 		switch r.opts.Links {
 		case LinksFootnotes:
-			r.w.Paragraph([]Span{{l.url, Style{FontB: true}}}, []Span{{fmt.Sprintf("[%d] ", i+1), Style{FontB: true}}}, []Span{{"    ", Style{FontB: true}}})
+			r.w.Paragraph([]layout.Span{{Text: l.url, Style: layout.Style{FontB: true}}}, []layout.Span{{Text: fmt.Sprintf("[%d] ", i+1), Style: layout.Style{FontB: true}}}, []layout.Span{{Text: "    ", Style: layout.Style{FontB: true}}})
 		case LinksQR:
-			r.w.Paragraph([]Span{{l.text, Style{}}}, []Span{{fmt.Sprintf("[%d] ", i+1), Style{Bold: true}}}, []Span{{"    ", Style{}}})
-			r.w.Apply(Style{})
+			r.w.Paragraph([]layout.Span{{Text: l.text, Style: layout.Style{}}}, []layout.Span{{Text: fmt.Sprintf("[%d] ", i+1), Style: layout.Style{Bold: true}}}, []layout.Span{{Text: "    ", Style: layout.Style{}}})
+			r.w.Apply(layout.Style{})
 			r.w.SetAlign(escpos.AlignCenter)
 			if err := r.w.B.PrintQRCode(l.url, escpos.QRErrorM, 4); err != nil {
 				return fmt.Errorf("link %d: %w", i+1, err)
 			}
 			r.w.B.LineFeed()
-			r.w.Line(Span{l.url, Style{FontB: true}})
+			r.w.Line(layout.Span{Text: l.url, Style: layout.Style{FontB: true}})
 			r.w.SetAlign(escpos.AlignLeft)
 		}
 	}
-	r.w.Apply(Style{})
+	r.w.Apply(layout.Style{})
 	return nil
 }
