@@ -28,7 +28,8 @@ const (
 	// EnvEscposUSBSerial narrows USB auto-detection to one printer.
 	EnvEscposUSBSerial = "ESCPOS_USB_SERIAL"
 
-	// EnvEscposPaperWidth is the printable width: 80mm, 58mm, or dots.
+	// EnvEscposPaperWidth is the paper width: 80mm (or 80), 82mm, 60mm,
+	// 58mm, or a printable width in dots such as 576.
 	EnvEscposPaperWidth = "ESCPOS_PAPER_WIDTH"
 
 	// EnvEscposTimeout bounds each status query.
@@ -70,6 +71,9 @@ func (p *PrinterConfig) Load() error {
 	w := strings.ToLower(envString(EnvEscposPaperWidth, "80mm"))
 	if dots, ok := paperWidths[w]; ok {
 		p.PaperWidth = dots
+	} else if dots, ok := paperWidths[w+"mm"]; ok {
+		// A bare 58/60/80/82 means millimetres; no printer is that few dots wide.
+		p.PaperWidth = dots
 	} else if n, err := strconv.Atoi(w); err == nil {
 		p.PaperWidth = n
 	} else {
@@ -82,8 +86,8 @@ func (p *PrinterConfig) Load() error {
 }
 
 func (p *PrinterConfig) Validate() error {
-	if p.PaperWidth < 64 || p.PaperWidth > 1024 || p.PaperWidth%8 != 0 {
-		return configError(EnvEscposPaperWidth, "width must be a multiple of 8 dots from 64 to 1024")
+	if p.PaperWidth < 256 || p.PaperWidth > 1024 || p.PaperWidth%8 != 0 {
+		return configError(EnvEscposPaperWidth, "width must be 58mm–82mm, or a multiple of 8 dots from 256 to 1024")
 	}
 	if p.Timeout <= 0 {
 		return configError(EnvEscposTimeout, "must be positive")

@@ -250,6 +250,9 @@ func (q *Queue) step(ctx context.Context) (time.Duration, error) {
 
 	status, msg := StatusCompleted, sql.NullString{}
 	if err != nil {
+		// Reopen the connection for the next job, even after a timeout:
+		// the printer may have been unplugged or switched off.
+		q.dev.Disconnect()
 		status, msg = StatusFailed, sql.NullString{String: err.Error(), Valid: true}
 		console.Error("job %d failed: %v", job.ID, err)
 	} else {

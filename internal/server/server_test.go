@@ -25,8 +25,8 @@ type harness struct {
 	admin string
 }
 
-// newHarness starts a server whose printer is target.
-func newHarness(t *testing.T, target device.Target) *harness {
+// newHarness starts a server whose printer is reached through conn.
+func newHarness(t *testing.T, conn string) *harness {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -40,7 +40,10 @@ func newHarness(t *testing.T, target device.Target) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dev := device.New(device.Config{Target: target, PaperWidth: 576})
+	dev, err := device.New(device.Config{Connection: conn, PaperWidth: 576})
+	if err != nil {
+		t.Fatal(err)
+	}
 	q := queue.New(db, dev, 0)
 	go q.Run(ctx)
 	s := &Server{
@@ -95,7 +98,7 @@ func field(m map[string]any, path ...string) any {
 }
 
 func TestAuthAndScopes(t *testing.T) {
-	h := newHarness(t, device.Target{Kind: device.KindDiscard})
+	h := newHarness(t, "discard")
 	if code, _, _ := h.do("GET", "/v1/printer", "", ""); code != http.StatusUnauthorized {
 		t.Errorf("no key: got %d", code)
 	}
@@ -121,7 +124,7 @@ func TestAuthAndScopes(t *testing.T) {
 }
 
 func TestPrintRoutes(t *testing.T) {
-	h := newHarness(t, device.Target{Kind: device.KindDiscard})
+	h := newHarness(t, "discard")
 	key := h.newKey("print", "read")
 	for _, tc := range []struct{ path, body string }{
 		{"/v1/print/text?wait=5s", "hello"},
@@ -155,7 +158,7 @@ func TestPrintRoutes(t *testing.T) {
 
 func TestQueueCancelAndRetry(t *testing.T) {
 	// A printer that cannot be opened keeps jobs queued.
-	h := newHarness(t, device.Target{Kind: device.KindFile, Path: filepath.Join(t.TempDir(), "missing")})
+	h := newHarness(t, "file:"+filepath.Join(t.TempDir(), "missing"))
 	key := h.newKey("print", "read")
 	code, m, raw := h.do("POST", "/v1/print/text?priority=5&label=first", key, "one")
 	if code != http.StatusAccepted || field(m, "job", "status") != "queued" {
@@ -188,7 +191,7 @@ func TestQueueCancelAndRetry(t *testing.T) {
 }
 
 func TestKeyRotationAndRevocation(t *testing.T) {
-	h := newHarness(t, device.Target{Kind: device.KindDiscard})
+	h := newHarness(t, "discard")
 	old := h.newKey("read")
 	id, _, _ := auth.Parse(old)
 

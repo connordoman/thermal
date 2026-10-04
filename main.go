@@ -78,18 +78,17 @@ func main() {
 		console.Fatal("creating the bootstrap key: %v", err)
 	}
 
-	target, err := device.ParseConnection(cfg.Printer.Connection)
-	if err != nil {
-		console.Fatal("%s: %v", settings.EnvEscposConnection, err)
-	}
-	dev := device.New(device.Config{
-		Target:     target,
+	dev, err := device.New(device.Config{
+		Connection: cfg.Printer.Connection,
 		VendorID:   cfg.Printer.VendorId,
 		ProductID:  cfg.Printer.ProductId,
 		USBSerial:  cfg.Printer.USBSerial,
 		PaperWidth: cfg.Printer.PaperWidth,
 		Timeout:    cfg.Printer.Timeout,
 	})
+	if err != nil {
+		console.Fatal("%s: %v", settings.EnvEscposConnection, err)
+	}
 	defer dev.Close()
 
 	q := queue.New(db, dev, cfg.Server.Retention)
@@ -123,7 +122,7 @@ func main() {
 		IdleTimeout:       2 * time.Minute,
 	}
 	go func() {
-		console.Info("listening on %s (printer: %s, database: %s)", cfg.Server.Addr, target, cfg.Server.DBPath)
+		console.Info("listening on %s (printer: %s, database: %s)", cfg.Server.Addr, dev.ConnectionString(), cfg.Server.DBPath)
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			console.Fatal("serving: %v", err)
 		}

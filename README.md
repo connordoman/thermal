@@ -48,7 +48,7 @@ Settings come from the environment, or a `.env` file in the working directory.
 | `ESCPOS_CONNECTION`                     | `usb`        | How to reach the printer; see below                                                         |
 | `ESCPOS_VENDOR_ID`, `ESCPOS_PRODUCT_ID` |              | Optional hex IDs that narrow USB detection, e.g. `0fe6` and `811e`                          |
 | `ESCPOS_USB_SERIAL`                     |              | Optional USB serial number that narrows USB detection                                       |
-| `ESCPOS_PAPER_WIDTH`                    | `80mm`       | `80mm`, `82mm`, `60mm`, `58mm`, or a width in dots                                          |
+| `ESCPOS_PAPER_WIDTH`                    | `80mm`       | `80mm` (or `80`), `82mm`, `60mm`, `58mm`, or a printable width in dots such as `576`        |
 | `ESCPOS_TIMEOUT`                        | `2s`         | Timeout for each printer query                                                              |
 | `THERMAL_ADDR`                          | `:8080`      | Listen address                                                                              |
 | `THERMAL_DB`                            | `thermal.db` | SQLite database file                                                                        |
@@ -59,16 +59,17 @@ Settings come from the environment, or a `.env` file in the working directory.
 | `THERMAL_IMAGE_TIMEOUT`                 | `10s`        | Time limit for downloading one image                                                        |
 | `THERMAL_DEBUG`                         | `false`      | Debug logging and Gin debug mode                                                            |
 
-`ESCPOS_CONNECTION` accepts:
+`ESCPOS_CONNECTION` is an [`escpos.Open`](https://github.com/connordoman/escpos#connection-strings-and-reconnecting) connection string:
 
-| Value                           |                                                                                                                                                       |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `usb`                           | Find a USB printer automatically. Linux and Windows use the OS printer driver (no cgo); macOS, and printers not bound to a printer driver, use libusb |
-| `libusb`                        | Find a USB printer with libusb only                                                                                                                   |
-| `file:/dev/usb/lp0`             | A device node                                                                                                                                         |
-| `tcp://192.168.1.50:9100`       | Ethernet (the port defaults to 9100)                                                                                                                  |
-| `serial:/dev/ttyUSB0?baud=9600` | RS-232 (`serial:COM3` on Windows)                                                                                                                     |
-| `discard`                       | Accept and record jobs without printing, for testing                                                                                                  |
+| Value | |
+|---|---|
+| `usb` | Find a USB printer automatically. Linux and Windows use the OS printer driver (no cgo); macOS, and printers not bound to a printer driver, use libusb |
+| `usb?vid=0fe6&pid=811e&serial=...` | The same, narrowed down (the `ESCPOS_VENDOR_ID`, `ESCPOS_PRODUCT_ID` and `ESCPOS_USB_SERIAL` settings are merged in) |
+| `libusb` | Find a USB printer with libusb only |
+| `file:/dev/usb/lp0` | A device node |
+| `tcp://192.168.1.50:9100` | Ethernet (the port defaults to 9100) |
+| `serial:/dev/ttyUSB0?baud=9600` | RS-232 (`serial:COM3` on Windows); also `databits`, `parity`, `stopbits` |
+| `discard` | Accept and record jobs without printing, for testing |
 
 The connection opens on first use and reopens after a failure, so the printer can be unplugged, switched off or replaced while the server runs.
 
