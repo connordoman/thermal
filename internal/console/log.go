@@ -3,6 +3,7 @@ package console
 import (
 	"fmt"
 	"log"
+	"os"
 
 	"charm.land/lipgloss/v2"
 	"github.com/connordoman/windy"
@@ -90,6 +91,7 @@ func Error(format string, a ...any) {
 
 func Fatal(format string, a ...any) {
 	wrapper(LogLevelFatal, format, a...)
+	os.Exit(1)
 }
 
 func Log(format string, a ...any) {
