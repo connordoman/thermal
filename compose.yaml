@@ -1,0 +1,23 @@
+# Runs thermal on the Raspberry Pi. Load the image first with
+# `just docker-deploy-pi`, or build it on the Pi with `just docker-build`.
+services:
+  thermal:
+    image: thermal:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - thermal-data:/data
+      # The printer's /dev/usb/lpN node appears and disappears as it is
+      # plugged in and out, so share /dev rather than one fixed device...
+      - /dev:/dev
+    device_cgroup_rules:
+      # ...but only allow access to USB printers (usblp, major number 180).
+      - "c 180:* rmw"
+    group_add:
+      - "7" # lp, which owns /dev/usb/lp* on Raspberry Pi OS
+volumes:
+  thermal-data:

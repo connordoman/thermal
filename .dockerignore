@@ -1,0 +1,10 @@
+.git
+.env*
+*.db
+*.db-shm
+*.db-wal
+bin
+Dockerfile
+compose.yaml
+justfile
+README.md

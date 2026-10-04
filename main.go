@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -45,11 +46,15 @@ func init() {
 }
 
 func main() {
+	healthcheck := flag.Bool("healthcheck", false, "exit 0 if the server on THERMAL_ADDR is healthy, 1 otherwise (for container health checks)")
 	newAdmin := flag.String("new-admin-key", "", "create an admin key with this name, print it and exit (for when every admin key is lost)")
 	flag.Parse()
 
 	cfg := settings.Global
 	console.SetLogLevel(console.LogLevelDebug, cfg.Server.Debug)
+	if *healthcheck {
+		os.Exit(checkHealth(cfg.Server.Addr))
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -164,6 +169,30 @@ func bootstrap(ctx context.Context, db *store.Store, keys *auth.Manager) error {
 		"  Then revoke or rotate it: DELETE /v1/keys/%s once you have another admin key.\n%s\n\n",
 		line, full, addrPort(settings.Global.Server.Addr), full, k.ID, line)
 	return nil
+}
+
+// checkHealth asks the running server's /healthz whether it is healthy.
+func checkHealth(addr string) int {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	client := http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("http://" + net.JoinHostPort(host, port) + "/healthz")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintln(os.Stderr, "unhealthy:", resp.Status)
+		return 1
+	}
+	return 0
 }
 
 func addrPort(addr string) string {
