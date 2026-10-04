@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/connordoman/escpos"
-	"github.com/connordoman/thermal/internal/queue"
 	"github.com/gin-gonic/gin"
 )
 
@@ -30,7 +29,7 @@ type statusJSON struct {
 
 func toStatusJSON(s escpos.Status) statusJSON {
 	return statusJSON{
-		Ready: s.Ready(), Summary: queue.DescribeStatus(s),
+		Ready: s.Ready(), Summary: s.String(),
 		CoverOpen: s.Offline.CoverOpen(), PaperEnd: s.Paper.PaperEnd(),
 		FeedButtonPressed: s.Offline.FeedButtonPressed(), DrawerSignalHigh: s.Printer.DrawerSignalHigh(),
 		CutterError: s.Error.AutoCutterError(), Unrecoverable: s.Error.UnrecoverableError(),

@@ -301,9 +301,9 @@ type ImagePlacement struct {
 	Threshold uint8
 }
 
-// PrintImage scales img, places it on a paper-width canvas according to p and
-// prints it. Placing it on a canvas rather than relying on ESC a works on
-// every printer.
+// PrintImage scales img according to p and prints it. Unlike
+// escpos.Builder.PrintImage it also enlarges images when p.Width asks for it,
+// using a smooth filter.
 func PrintImage(b *escpos.Builder, img image.Image, p ImagePlacement) error {
 	paper := b.PaperWidth()
 	src := img.Bounds()
@@ -317,22 +317,13 @@ func PrintImage(b *escpos.Builder, img image.Image, p ImagePlacement) error {
 		return &ImageError{"", fmt.Errorf("image would print %d dots (%.1f m) tall; the limit is %d",
 			h, float64(h)/8000, MaxPrintedImageHeight)}
 	}
-
-	canvas := image.NewRGBA(image.Rect(0, 0, paper, h))
-	draw.Draw(canvas, canvas.Bounds(), image.NewUniform(color.White), image.Point{}, draw.Src)
-	x := 0
-	switch p.Align {
-	case escpos.AlignCenter:
-		x = (paper - w) / 2
-	case escpos.AlignRight:
-		x = paper - w
-	}
-	dst := image.Rect(x, 0, x+w, h)
+	scaled := image.NewRGBA(image.Rect(0, 0, w, h))
+	draw.Draw(scaled, scaled.Bounds(), image.NewUniform(color.White), image.Point{}, draw.Src)
 	// Composite over white so transparent areas print as paper.
-	xdraw.CatmullRom.Scale(canvas, dst, img, src, xdraw.Over, nil)
-	return b.PrintImage(canvas, escpos.ImageOptions{
-		MaxWidth:  paper,
+	xdraw.CatmullRom.Scale(scaled, scaled.Bounds(), img, src, xdraw.Over, nil)
+	return b.PrintImage(scaled, escpos.ImageOptions{
 		Dither:    p.Dither,
 		Threshold: p.Threshold,
+		Align:     p.Align,
 	})
 }

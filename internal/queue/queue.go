@@ -7,11 +7,10 @@
 package queue
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -229,7 +228,7 @@ func (q *Queue) step(ctx context.Context) (time.Duration, error) {
 		cancel()
 		switch {
 		case err == nil && !st.Ready():
-			q.setState(StateWaiting, describeStatus(st), 0)
+			q.setState(StateWaiting, st.String(), 0)
 			return 3 * time.Second, nil
 		case err != nil && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, escpos.ErrNotReadable):
 			q.setState(StateOffline, err.Error(), 0)
@@ -272,82 +271,34 @@ func (q *Queue) step(ctx context.Context) (time.Duration, error) {
 	return 0, nil
 }
 
-// print sends a job. If the connection can answer, it then waits for the
-// printer to report that it has processed everything (GS ( H), so
+// print sends a job. If the connection can answer, the printer is asked to
+// confirm it has processed everything (escpos.Printer.SendConfirmed), so
 // "completed" means printed rather than merely sent.
 func (q *Queue) print(ctx context.Context, id int64, payload []byte, copies int, readable bool) (confirmed bool, err error) {
 	if payload == nil {
 		return false, errors.New("job data has been purged")
 	}
-	copies = max(copies, 1)
-	size := len(payload) * copies
+	data := bytes.Repeat(payload, max(copies, 1))
 	// Generous: the printer accepts data roughly as fast as it prints.
-	timeout := 30*time.Second + time.Duration(size/10_000)*time.Second
+	timeout := 30*time.Second + time.Duration(len(data)/10_000)*time.Second
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	pid := [4]byte{}
-	copy(pid[:], fmt.Sprintf("%04d", id%10000))
-	marker := escpos.NewBuilder(q.dev.PaperWidth())
-	marker.SetProcessIDResponse(pid)
-
 	err = q.dev.Do(ctx, func(p *escpos.Printer) error {
-		for range copies {
-			if _, err := p.SendRaw(ctx, payload); err != nil {
-				return err
-			}
-		}
 		if !readable {
-			return nil
-		}
-		if _, err := p.Send(ctx, marker); err != nil {
+			_, err := p.SendRaw(ctx, data)
 			return err
 		}
-		wctx, wcancel := context.WithTimeout(ctx, 15*time.Second+time.Duration(size/20_000)*time.Second)
-		defer wcancel()
-		if err := p.WaitProcessID(wctx, pid); err != nil {
+		err := p.SendConfirmed(ctx, data)
+		if errors.Is(err, escpos.ErrUnconfirmed) {
 			// Everything was sent; only the confirmation is missing.
-			console.Warn("job %d: no completion confirmation from the printer: %v", id, err)
+			console.Warn("job %d: %v", id, err)
 			return nil
 		}
-		confirmed = true
-		return nil
+		confirmed = err == nil
+		return err
 	})
 	return confirmed, err
-}
-
-func describeStatus(s escpos.Status) string {
-	var p []string
-	if s.Offline.CoverOpen() {
-		p = append(p, "cover open")
-	}
-	if s.Paper.PaperEnd() {
-		p = append(p, "out of paper")
-	}
-	if s.Error.AutoCutterError() {
-		p = append(p, "cutter error")
-	}
-	if s.Error.UnrecoverableError() {
-		p = append(p, "unrecoverable error")
-	}
-	if s.Error.AutoRecoverableError() {
-		p = append(p, "auto-recoverable error (overheated?)")
-	}
-	if len(p) == 0 && s.Offline.Error() {
-		p = append(p, "error")
-	}
-	if len(p) == 0 {
-		return "not ready"
-	}
-	return strings.Join(p, ", ")
-}
-
-// DescribeStatus summarises a status for people.
-func DescribeStatus(s escpos.Status) string {
-	if s.Ready() {
-		return "ready"
-	}
-	return describeStatus(s)
 }
 
 func (q *Queue) purgeLoop(ctx context.Context) {
