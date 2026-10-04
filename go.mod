@@ -4,7 +4,7 @@ go 1.27.1
 
 require (
 	charm.land/lipgloss/v2 v2.0.6
-	github.com/connordoman/escpos v0.1.0
+	github.com/connordoman/escpos v0.2.0
 	github.com/connordoman/windy v1.0.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/joho/godotenv v1.5.1

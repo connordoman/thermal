@@ -56,7 +56,7 @@ func (s *ServerConfig) Load() error {
 	feed, err := envInt(EnvThermalCutFeed, 120)
 	add(err)
 	if feed < 0 || feed > 255 {
-		add(configError(EnvThermalCutFeed, "must be 0–255 dots"))
+		add(configError(EnvThermalCutFeed, "must be 0\u2013255 dots"))
 	}
 	s.CutFeed = uint8(min(max(feed, 0), 255))
 	s.ImageAllowPrivateHosts, err = envBool(EnvImageAllowLocal, false)
