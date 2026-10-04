@@ -61,11 +61,15 @@ var markdown = goldmark.New(
 // Paragraph spacing in dots (half a Font A line).
 const blockGap = 12
 
-// container is a block quote or list item, which prefixes the lines of the
-// blocks inside it.
+// container is a block quote, alert or list item, which surrounds the
+// lines of the blocks inside it: first before the first line, rest before
+// the others, and right against the right edge (an alert's box).
 type container struct {
-	first, rest string
-	used        bool
+	first, rest, right string
+	used               bool
+	// bar marks containers drawn with vertical lines, which need tight
+	// line spacing to join up.
+	bar bool
 }
 
 type link struct {
@@ -107,10 +111,10 @@ func (r *mdRenderer) gap() { r.pendingGap = r.printed }
 func (r *mdRenderer) flushGap() {
 	if r.pendingGap {
 		r.pendingGap = false
-		if r.inQuote() {
-			// Keep the quote bar unbroken across paragraphs.
-			first, _ := r.prefixes()
-			r.w.Line(layout.Span{Text: strings.TrimRight(first, " ")})
+		if r.inFrame() {
+			// Keep quote bars and alert boxes unbroken across paragraphs.
+			first, _, right := r.prefixes()
+			r.w.LineFramed([]layout.Span{{Text: strings.TrimRight(first, " ")}}, []layout.Span{{Text: right}})
 		} else {
 			r.w.B.FeedUnits(blockGap)
 		}
@@ -120,17 +124,20 @@ func (r *mdRenderer) flushGap() {
 
 const quoteBar = "│ "
 
-func (r *mdRenderer) inQuote() bool {
+// inFrame reports whether the current block is inside a quote or alert.
+func (r *mdRenderer) inFrame() bool {
 	for _, c := range r.containers {
-		if c.first == quoteBar {
+		if c.bar {
 			return true
 		}
 	}
 	return false
 }
 
-func (r *mdRenderer) prefixes() (first, rest string) {
-	var f, s strings.Builder
+// prefixes returns what to print before the first and following lines of
+// the next block, and at the right edge of each line.
+func (r *mdRenderer) prefixes() (first, rest, right string) {
+	var f, s, rt strings.Builder
 	for i := range r.containers {
 		c := &r.containers[i]
 		if c.used {
@@ -141,7 +148,10 @@ func (r *mdRenderer) prefixes() (first, rest string) {
 		s.WriteString(c.rest)
 		c.used = true
 	}
-	return f.String(), s.String()
+	for i := len(r.containers) - 1; i >= 0; i-- {
+		rt.WriteString(r.containers[i].right)
+	}
+	return f.String(), s.String(), rt.String()
 }
 
 func spansText(spans []layout.Span) string {
@@ -155,7 +165,7 @@ func spansText(spans []layout.Span) string {
 // leaf prints one block of inline text.
 func (r *mdRenderer) leaf(spans []layout.Span, align escpos.Align, scale float64) error {
 	r.flushGap()
-	first, rest := r.prefixes()
+	first, rest, right := r.prefixes()
 	if r.opts.Unicode == UnicodeImage && NeedsUnicode(spansText(spans)) {
 		bold := false
 		for _, s := range spans {
@@ -163,16 +173,20 @@ func (r *mdRenderer) leaf(spans []layout.Span, align escpos.Align, scale float64
 		}
 		o := unifont.Options{
 			Scale: 1.5 * scale, Bold: bold, Align: align,
-			FirstPrefix: first, RestPrefix: rest,
+			FirstPrefix: first, RestPrefix: rest, Suffix: right,
 		}
-		if r.inQuote() {
+		if r.inFrame() {
 			zero := 0
 			o.LineGap = &zero
 		}
 		return unifont.Print(r.w.B, spansText(spans), o)
 	}
 	r.w.SetAlign(align)
-	r.w.Paragraph(spans, []layout.Span{{Text: first}}, []layout.Span{{Text: rest}})
+	if right != "" {
+		align = escpos.AlignLeft // the right edge is placed by position
+	}
+	r.w.SetAlign(align)
+	r.w.ParagraphFramed(spans, []layout.Span{{Text: first}}, []layout.Span{{Text: rest}}, []layout.Span{{Text: right}})
 	r.w.Apply(layout.Style{})
 	r.w.SetAlign(escpos.AlignLeft)
 	return nil
@@ -231,8 +245,9 @@ func (r *mdRenderer) block(n ast.Node) error {
 
 	case *ast.ThematicBreak:
 		r.flushGap()
-		first, _ := r.prefixes()
-		r.w.Line(layout.Span{Text: first + strings.Repeat("─", max(r.w.Width/12-len([]rune(first)), 1))})
+		first, _, right := r.prefixes()
+		cells := r.w.Width/12 - r.w.Measure(first) - r.w.Measure(right)
+		r.w.LineFramed([]layout.Span{{Text: first + strings.Repeat("─", max(cells, 1))}}, []layout.Span{{Text: right}})
 		r.gap()
 
 	case *ast.CodeBlock, *ast.FencedCodeBlock:
@@ -244,9 +259,9 @@ func (r *mdRenderer) block(n ast.Node) error {
 			code.Write(seg.Value(r.src))
 		}
 		body := strings.TrimRight(code.String(), "\n")
-		first, rest := r.prefixes()
+		first, rest, right := r.prefixes()
 		if r.opts.Unicode == UnicodeImage && NeedsUnicode(body) {
-			if err := unifont.Print(r.w.B, body, unifont.Options{Scale: 1, FirstPrefix: first, RestPrefix: rest}); err != nil {
+			if err := unifont.Print(r.w.B, body, unifont.Options{Scale: 1, FirstPrefix: first, RestPrefix: rest, Suffix: right}); err != nil {
 				return err
 			}
 		} else {
@@ -255,7 +270,7 @@ func (r *mdRenderer) block(n ast.Node) error {
 				if i == 0 {
 					p = first
 				}
-				r.w.Paragraph([]layout.Span{{Text: line, Style: layout.Style{FontB: true}}}, []layout.Span{{Text: p}}, []layout.Span{{Text: rest}})
+				r.w.ParagraphFramed([]layout.Span{{Text: line, Style: layout.Style{FontB: true}}}, []layout.Span{{Text: p}}, []layout.Span{{Text: rest}}, []layout.Span{{Text: right}})
 			}
 			r.w.Apply(layout.Style{})
 		}
@@ -263,12 +278,23 @@ func (r *mdRenderer) block(n ast.Node) error {
 
 	case *ast.Blockquote:
 		r.flushGap()
-		outer := !r.inQuote()
+		outer := !r.inFrame()
 		if outer {
 			// At Font A's height the │ bars of consecutive lines join.
 			r.w.B.SetLineSpacing(layout.BarLineSpacing(layout.Style{}))
 		}
-		r.containers = append(r.containers, container{first: quoteBar, rest: quoteBar})
+		if kind := r.alertKind(n); kind != "" {
+			err := r.alert(n, kind)
+			if outer {
+				r.w.B.DefaultLineSpacing()
+			}
+			if err != nil {
+				return err
+			}
+			r.gap()
+			break
+		}
+		r.containers = append(r.containers, container{first: quoteBar, rest: quoteBar, bar: true})
 		err := r.children(n)
 		r.containers = r.containers[:len(r.containers)-1]
 		if outer {
@@ -283,7 +309,7 @@ func (r *mdRenderer) block(n ast.Node) error {
 		r.flushGap()
 		depth := 0
 		for _, c := range r.containers {
-			if c.first != quoteBar {
+			if !c.bar {
 				depth++
 			}
 		}
@@ -334,6 +360,72 @@ func (r *mdRenderer) block(n ast.Node) error {
 		return r.children(n)
 	}
 	return nil
+}
+
+// alertKinds are GitHub's alert types: > [!NOTE] and so on.
+var alertKinds = map[string]bool{"NOTE": true, "TIP": true, "IMPORTANT": true, "WARNING": true, "CAUTION": true}
+
+// alertKind reports whether q is a GitHub alert, a quote whose first line
+// is [!NOTE], [!TIP], [!IMPORTANT], [!WARNING] or [!CAUTION], and if so
+// removes that marker from it.
+func (r *mdRenderer) alertKind(q *ast.Blockquote) string {
+	p, ok := q.FirstChild().(*ast.Paragraph)
+	if !ok {
+		return ""
+	}
+	var marker []ast.Node
+	var line strings.Builder
+	for c := p.FirstChild(); c != nil; c = c.NextSibling() {
+		t, ok := c.(*ast.Text)
+		if !ok {
+			return ""
+		}
+		line.Write(t.Segment.Value(r.src))
+		marker = append(marker, c)
+		if t.SoftLineBreak() || t.HardLineBreak() {
+			break
+		}
+	}
+	m := strings.TrimSpace(line.String())
+	if !strings.HasPrefix(m, "[!") || !strings.HasSuffix(m, "]") {
+		return ""
+	}
+	kind := strings.ToUpper(m[2 : len(m)-1])
+	if !alertKinds[kind] {
+		return ""
+	}
+	for _, n := range marker {
+		p.RemoveChild(p, n)
+	}
+	if p.ChildCount() == 0 {
+		q.RemoveChild(q, p)
+	}
+	return kind
+}
+
+// alert prints a GitHub alert as a box with its title set into the top
+// border, like an HTML fieldset:
+//
+//	┌─ NOTE ─────────┐
+//	│ Contents.      │
+//	└────────────────┘
+func (r *mdRenderer) alert(n ast.Node, kind string) error {
+	first, rest, right := r.prefixes()
+	outerRight := []layout.Span{{Text: right}}
+	cells := r.w.Width/12 - r.w.Measure(first) - r.w.Measure(right)
+	r.w.LineFramed([]layout.Span{
+		{Text: first + "┌─ "},
+		{Text: kind, Style: layout.Style{Underline: 1}},
+		{Text: " " + strings.Repeat("─", max(cells-len(kind)-5, 1)) + "┐"},
+	}, outerRight)
+	r.containers = append(r.containers, container{first: "│ ", rest: "│ ", right: " │", bar: true})
+	err := r.children(n)
+	r.containers = r.containers[:len(r.containers)-1]
+	r.pendingGap = false // no blank line before the bottom border
+	r.w.Apply(layout.Style{})
+	r.w.LineFramed([]layout.Span{{Text: rest + "└" + strings.Repeat("─", max(cells-2, 1)) + "┘"}}, outerRight)
+	r.printed = true
+	return err
 }
 
 // imageOnly returns the images in a paragraph that holds nothing else.
@@ -425,31 +517,31 @@ func (r *mdRenderer) table(n *east.Table) error {
 			t.Rows = append(t.Rows, cells)
 		}
 	}
-	first, rest := r.prefixes()
+	first, rest, right := r.prefixes()
 	if r.opts.Unicode == UnicodeImage && unicode {
 		// Lay the table out in Unifont cells; at scale 1.5 a cell is the
 		// same 12 dots as a Font A character.
-		cols := r.w.Width/12 - unifont.Cells(first)
+		cols := r.w.Width/12 - unifont.Cells(first) - unifont.Cells(right)
 		var lines []string
 		for _, l := range t.Layout(cols, unifont.Cells) {
 			lines = append(lines, spansText(l))
 		}
 		return unifont.Print(r.w.B, strings.Join(lines, "\n"), unifont.Options{
-			Scale: 1.5, NoWrap: true, FirstPrefix: first, RestPrefix: rest,
+			Scale: 1.5, NoWrap: true, FirstPrefix: first, RestPrefix: rest, Suffix: right,
 		})
 	}
-	if first == "" && rest == "" {
+	if first == "" && rest == "" && right == "" {
 		r.w.Table(t)
 		return nil
 	}
-	// Inside a list or quote: lay out narrower and add the prefixes.
-	cols := r.w.Width/12 - r.w.Measure(rest)
+	// Inside a list, quote or alert: lay out narrower and add the prefixes.
+	cols := r.w.Width/12 - r.w.Measure(rest) - r.w.Measure(right)
 	for i, l := range t.Layout(cols, r.w.Measure) {
 		p := rest
 		if i == 0 {
 			p = first
 		}
-		r.w.Line(append([]layout.Span{{Text: p}}, l...)...)
+		r.w.LineFramed(append([]layout.Span{{Text: p}}, l...), []layout.Span{{Text: right}})
 	}
 	r.w.Apply(layout.Style{})
 	return nil

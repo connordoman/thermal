@@ -36,7 +36,7 @@ func renderExample(t *testing.T, name string) string {
 func TestReceiptExample(t *testing.T) {
 	d := renderExample(t, "receipt.json")
 	for _, want := range []string{
-		"DOMAN COFFEE",
+		"YUMMY COFFEE",
 		"Sat 3 Oct 2026 02:30", // America/Vancouver
 		"2 x Flat white",
 		"Subtotal ...",

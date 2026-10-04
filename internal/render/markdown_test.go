@@ -45,3 +45,44 @@ func TestMarkdown(t *testing.T) {
 		}
 	}
 }
+
+func TestAlerts(t *testing.T) {
+	src := "> [!NOTE]\n> Useful information that users should know, even when skimming. It wraps onto a second line.\n>\n> - a list item\n\n" +
+		"- item\n\n  > [!warning]\n  > Inside a list.\n\n" +
+		"> [!TIP]\n\n" +
+		"> [!NOPE]\n> Not an alert, just a quote.\n"
+	out, err := RenderMarkdown(context.Background(), NewEnv(576, nil), src, MarkdownOptions{}, Finish{Cut: CutNone})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := escpostest.Lines(out)
+	if os.Getenv("SHOW") != "" {
+		t.Log("\n" + strings.Join(lines, "\n"))
+	}
+	text := strings.Join(lines, "\n")
+	for _, want := range []string{
+		"┌─ NOTE ─", "│ Useful information", "│ - a list item", "└───",
+		"- item\n  ┌─ WARNING ─", "  │ Inside a list.", "  └──",
+		"┌─ TIP ─", "│ [!NOPE] Not an alert",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("output lacks %q", want)
+		}
+	}
+	for _, l := range lines {
+		if strings.HasPrefix(strings.TrimLeft(l, " -"), "┌") && (!strings.HasSuffix(l, "┐") || len([]rune(l)) != 48) {
+			t.Errorf("bad top border %q", l)
+		}
+	}
+	// Box lines fill the paper exactly, so the right borders line up.
+	for _, l := range lines {
+		if strings.Contains(l, "│") && strings.HasSuffix(l, "│") && len([]rune(l)) != 48 {
+			t.Errorf("box line is %d columns, want 48: %q", len([]rune(l)), l)
+		}
+	}
+	d := escpostest.Describe(out)
+	// Titles are underlined, and the boxes' lines join.
+	if !strings.Contains(d, "┌─ <ESC - 1>NOTE<ESC - 0> ─") || !strings.Contains(d, "<ESC 3 24>") {
+		t.Errorf("title not underlined or spacing not tight:\n%s", d)
+	}
+}

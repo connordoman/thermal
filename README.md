@@ -147,6 +147,7 @@ GitHub-flavoured Markdown, printed with the printer's own fonts and styles:
 | `` `code` ``, code blocks             | White on black, Font B                                                                                   |
 | `~~strike~~`                          | `~strike~` (printers cannot strike through)                                                              |
 | Lists, task lists, quotes             | Bullets with hanging indents, `[x]`/`[ ]`, `│` bars; all nest                                            |
+| `> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]` | A box with the underlined title set into its top border, fieldset-style: `┌─ NOTE ───┐` |
 | Tables                                | Columns sized to fit, cells wrap, alignment honoured                                                     |
 | `---`                                 | A full-width rule                                                                                        |
 | `![alt](url)`                         | The image, fetched with the same safeguards as image blocks (`images=false` prints the alt text instead) |
