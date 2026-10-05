@@ -1,5 +1,5 @@
 {
-  "$schema": "../internal/render/schema/job.v1.json",
+  "$schema": "http://thermal.local:8080/v1/schema/job.json",
   "version": 1,
   "metadata": { "label": "Order #1042", "order_id": 1042 },
   "options": { "cut": "partial", "copies": 1 },

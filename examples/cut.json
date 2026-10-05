@@ -1,0 +1,7 @@
+{
+  "$schema": "http://thermal.local:8080/v1/schema/job.json",
+  "version": 1,
+  "metadata": { "memo": "Simple Cut" },
+  "options": { "cut": "partial", "copies": 1, "feed": 0 },
+  "blocks": []
+}

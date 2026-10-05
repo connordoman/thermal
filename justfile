@@ -3,8 +3,8 @@
 # 64-bit Raspberry Pi OS is arm64; use PI_ARCH=arm for 32-bit.
 pi_arch := env("PI_ARCH", "arm64")
 pi_platform := if pi_arch == "arm" { "linux/arm/v7" } else { "linux/arm64" }
-pi_host := env("PI_HOST", "pi@pos.local")
-pi_url := env("PI_URL", "http://pos.local:8080")
+pi_host := env("PI_HOST", "thermal@thermal.local")
+pi_url := env("PI_URL", "http://thermal.local:8080")
 version := `git describe --tags --always --dirty 2>/dev/null || echo dev`
 ldflags := "-s -w -X github.com/connordoman/thermal/internal/server.Version=" + version
 
