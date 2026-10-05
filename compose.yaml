@@ -1,9 +1,14 @@
-# Runs thermal on the Raspberry Pi. Load the image first with
-# `just docker-deploy-pi`, or build it on the Pi with `just docker-build`.
+# Runs thermal on the Raspberry Pi from the image CI publishes. deploy/install.sh
+# puts this in /opt/thermal with a timer that pulls updates.
+#
+# THERMAL_TAG in .env picks the channel: latest (releases), edge (main) or a
+# version such as 0.2.0.
 services:
   thermal:
-    image: thermal:latest
+    image: ghcr.io/connordoman/thermal:${THERMAL_TAG:-latest}
     restart: unless-stopped
+    # Long enough for a job that is printing to finish before an update.
+    stop_grace_period: 30s
     ports:
       - "8080:8080"
     env_file:

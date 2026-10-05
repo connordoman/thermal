@@ -4,26 +4,18 @@
 # build machine (no emulation), so building on a Mac for the Pi is fast:
 #
 #   just docker-build-pi        # or:
-#   docker buildx build --platform linux/arm64 --build-context escpos=../escpos -t thermal --load .
+#   docker buildx build --platform linux/arm64 -t thermal --load .
 #
 # Use linux/arm/v7 for 32-bit Raspberry Pi OS.
 
 ARG GO_VERSION=1.27
 
-# A local checkout of github.com/connordoman/escpos, passed with
-# --build-context escpos=../escpos. Without it this stage is empty and the
-# module comes from the Go proxy as go.mod requires.
-FROM scratch AS escpos
-
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS build
-WORKDIR /src/thermal
+WORKDIR /src
 ENV CGO_ENABLED=0 GOFLAGS=-trimpath
 
-COPY --from=escpos --exclude=reference --exclude=cmd / /src/escpos/
 COPY go.mod go.sum ./
-RUN --mount=type=cache,target=/go/pkg/mod \
-    if [ -f ../escpos/go.mod ]; then go work init . ../escpos; fi && \
-    go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY . .
 ARG TARGETOS TARGETARCH TARGETVARIANT

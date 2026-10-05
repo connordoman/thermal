@@ -286,23 +286,49 @@ Bodies and payloads are purged after `THERMAL_RETENTION`; the job records themse
 
 ## Running on a Raspberry Pi
 
-Recipes are in the [`justfile`](justfile). Set `PI_HOST` (default `pi@pos.local`) to your Pi's SSH address and `PI_ARCH=arm` if it runs 32-bit Raspberry Pi OS. Everything builds on your Mac and is copied over, so the Pi never compiles anything.
+Every push to `main` and every `v*` tag is tested and published by [GitHub Actions](.github/workflows/image.yaml) to `ghcr.io/connordoman/thermal`, for `linux/arm64`, `linux/arm/v7` and `linux/amd64`. The Pi checks for a new image every 5 minutes and restarts the server only when the image has changed. Publishing is therefore the whole deployment, and nothing needs SSH after setup.
 
-### With Docker
+| Tag | Published by |
+| --- | --- |
+| `latest` | release tags (`v1.2.3`, not pre-releases) |
+| `1.2.3`, `1.2` | release tags |
+| `edge` | every push to `main` |
+| `sha-abc1234` | every build |
+
+### Setup
+
+Run this once on the Pi. It installs Docker if needed, writes `/opt/thermal/compose.yaml` and `.env`, and enables the `thermal-update` timer:
 
 ```sh
-just docker-deploy-pi   # build the image, load it on the Pi, start it with compose
-just logs-pi            # the bootstrap key is printed on first start
+curl -fsSL https://raw.githubusercontent.com/connordoman/thermal/main/deploy/install.sh | sudo sh
 ```
 
-The image is about 26 MB: a static binary on distroless, running as a non-root user. Go cross-compiles on the build machine rather than under emulation, so a rebuild takes seconds. The database lives in the `thermal-data` volume, and a `.env` next to `compose.yaml` on the Pi is passed to the container.
+Or run `just pi-install` from your Mac, which does the same over SSH (set `PI_HOST`, default `pi@pos.local`). The bootstrap key is printed at the end; if you miss it, run `just pi-logs`. Running the script again refreshes `compose.yaml` and the timer but keeps your `.env`.
+
+Server settings go in `/opt/thermal/.env`, along with `THERMAL_TAG`, which picks the channel: `latest` (default), `edge`, or a pinned version such as `0.2.0`. Run `sudo systemctl start thermal-update` to apply changes immediately.
+
+### Releasing
+
+```sh
+just release v0.2.0   # check, tag and push; CI publishes :latest
+just pi-version       # what the Pi is running, from /healthz (PI_URL, default http://pos.local:8080)
+just pi-update        # optional: update now instead of within 5 minutes (SSH)
+```
+
+`just release` refuses to run with uncommitted changes. It also builds with `GOWORK=off` first, because CI cannot see `../escpos`: an escpos change must be tagged and required in `go.mod` before thermal can be released with it.
+
+During an update, the server has 30 seconds to finish the job it is printing. Queued jobs are stored in the database and resume after the restart.
+
+### The image
+
+The image is about 26 MB: a static binary on distroless, running as a non-root user. Go cross-compiles in the build stage instead of running under emulation, so builds take seconds. The database lives in the `thermal-data` volume. `just docker-build-pi` builds the same image locally.
 
 [`compose.yaml`](compose.yaml) shares `/dev` with the container so the printer can be unplugged and replugged (its `/dev/usb/lpN` node comes and goes). A device cgroup rule allows only USB printers (major number 180) to be opened. If the printer is always connected, you can replace both with `devices: ["/dev/usb/lp0"]`.
 
 ### With systemd
 
 ```sh
-just deploy-pi   # build, copy to /usr/local/bin/thermal, restart the service
+just deploy-pi   # build, copy to /usr/local/bin/thermal, restart the service (SSH)
 ```
 
 The Linux `usblp` driver creates `/dev/usb/lp0` for the printer, owned by the `lp` group. Add the service user to that group (`sudo usermod -aG lp thermal`), then install this unit:
@@ -340,7 +366,7 @@ just build-mac    # bin/thermal-darwin-arm64, with libusb
 just build-pi     # bin/thermal-linux-arm64, static
 ```
 
-Until `github.com/connordoman/escpos` is published, `thermal` builds against `../escpos` through the Go workspace, and the Docker recipes pass it to the build with `--build-context escpos=../escpos`. Once escpos is tagged and required in `go.mod`, a plain `docker build .` fetches it from the Go proxy instead.
+Locally, the Go workspace (`../go.work`) builds `thermal` against the `../escpos` checkout, so SDK changes can be tried before they are tagged. Docker builds and CI always use the escpos version in `go.mod`.
 
 | Path                   |                                                                                           |
 | ---------------------- | ----------------------------------------------------------------------------------------- |

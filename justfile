@@ -4,10 +4,9 @@
 pi_arch := env("PI_ARCH", "arm64")
 pi_platform := if pi_arch == "arm" { "linux/arm/v7" } else { "linux/arm64" }
 pi_host := env("PI_HOST", "pi@pos.local")
+pi_url := env("PI_URL", "http://pos.local:8080")
 version := `git describe --tags --always --dirty 2>/dev/null || echo dev`
 ldflags := "-s -w -X github.com/connordoman/thermal/internal/server.Version=" + version
-# Build against the local escpos checkout until it is published.
-escpos_context := if path_exists("../escpos/go.mod") == "true" { "--build-context escpos=../escpos" } else { "" }
 
 [private]
 default:
@@ -57,31 +56,48 @@ dev-discard *args:
 
 # Build a Docker image for this machine
 docker-build:
-    docker buildx build {{escpos_context}} --build-arg VERSION={{version}} -t thermal:latest --load .
+    docker buildx build --build-arg VERSION={{version}} -t thermal:latest --load .
 
 # Build a Docker image for the Raspberry Pi
 docker-build-pi:
-    docker buildx build {{escpos_context}} --platform {{pi_platform}} --build-arg VERSION={{version}} -t thermal:latest --load .
+    docker buildx build --platform {{pi_platform}} --build-arg VERSION={{version}} -t thermal:latest --load .
 
 # Run the local image without a printer on http://localhost:8080
 docker-run:
     docker run --rm -it -p 8080:8080 -e ESCPOS_CONNECTION=discard -v thermal-dev-data:/data thermal:latest
 
-# Copy the binary to the Pi and restart its systemd service
+# Tag a release (e.g. just release v0.2.0); CI publishes it and the Pi updates within minutes
+release version: check
+    #!/usr/bin/env sh
+    set -eu
+    case "{{version}}" in v[0-9]*) ;; *) echo "use a version like v0.2.0" >&2; exit 1 ;; esac
+    test -z "$(git status --porcelain)" || { echo "commit your changes first" >&2; exit 1; }
+    # CI has no ../escpos, so make sure the published modules build.
+    GOWORK=off go build -o /dev/null .
+    git tag -a "{{version}}" -m "{{version}}"
+    git push origin "{{version}}"
+    echo "Watch the build: gh run watch"
+
+# Show the version the Pi is running
+pi-version:
+    curl -fsS {{pi_url}}/healthz; echo
+
+# Set up the Pi over SSH (or run deploy/install.sh on it yourself)
+pi-install:
+    ssh -t {{pi_host}} 'curl -fsSL https://raw.githubusercontent.com/connordoman/thermal/main/deploy/install.sh | sudo sh'
+
+# Make the Pi check for an update now instead of within 5 minutes
+pi-update:
+    ssh -t {{pi_host}} 'sudo systemctl start thermal-update && sudo docker compose --project-directory /opt/thermal ps'
+
+# Follow the logs on the Pi (the bootstrap key is printed on first start)
+pi-logs:
+    ssh -t {{pi_host}} 'sudo docker compose --project-directory /opt/thermal logs -f'
+
+# Copy a binary to the Pi and restart its systemd service (without Docker)
 deploy-pi: build-pi
     scp bin/thermal-linux-{{pi_arch}} {{pi_host}}:/tmp/thermal
     ssh {{pi_host}} 'sudo install -m 755 /tmp/thermal /usr/local/bin/thermal && sudo systemctl restart thermal'
-
-# Build the image, load it on the Pi and (re)start it with compose
-docker-deploy-pi: docker-build-pi
-    docker save thermal:latest | gzip | ssh {{pi_host}} 'gunzip | docker load'
-    ssh {{pi_host}} 'mkdir -p thermal'
-    scp compose.yaml {{pi_host}}:thermal/compose.yaml
-    ssh {{pi_host}} 'cd thermal && docker compose up -d && docker image prune -f'
-
-# Follow the logs on the Pi (the bootstrap key is printed on first start)
-logs-pi:
-    ssh {{pi_host}} 'cd thermal && docker compose logs -f'
 
 # Remove build output and the dev database
 clean:
