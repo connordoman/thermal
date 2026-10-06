@@ -31,6 +31,7 @@ type AuditEvent struct {
 	Target     sql.NullString
 	Detail     sql.NullString
 	ClientIp   sql.NullString
+	ActorUser  sql.NullString
 }
 
 type Job struct {
@@ -57,4 +58,29 @@ type Job struct {
 	StartedAt     sql.NullInt64
 	FinishedAt    sql.NullInt64
 	PurgedAt      sql.NullInt64
+	Username      sql.NullString
+}
+
+type Session struct {
+	TokenHash  []byte
+	UserID     int64
+	CreatedAt  int64
+	ExpiresAt  int64
+	LastSeenAt int64
+	ClientIp   sql.NullString
+	UserAgent  sql.NullString
+}
+
+type User struct {
+	ID                int64
+	Username          string
+	PasswordHash      string
+	Scopes            string
+	Root              int64
+	CreatedBy         sql.NullString
+	CreatedAt         int64
+	UpdatedAt         int64
+	PasswordChangedAt int64
+	LastLoginAt       sql.NullInt64
+	DisabledAt        sql.NullInt64
 }

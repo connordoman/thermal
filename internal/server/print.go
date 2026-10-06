@@ -234,13 +234,14 @@ func (s *Server) submit(c *gin.Context, kind string, o jobOptions, body, payload
 		return
 	}
 	sum := sha256.Sum256(payload)
-	key := currentKey(c)
+	who := currentPrincipal(c)
 	id, err := s.Queue.Submit(c, dbq.CreateJobParams{
 		Kind:          kind,
 		Priority:      int64(o.priority),
 		Label:         store.NullString(o.label),
 		Copies:        int64(o.copies),
-		ApiKeyID:      store.NullString(key.ID),
+		ApiKeyID:      store.NullString(who.keyID),
+		Username:      store.NullString(who.username()),
 		ClientIp:      store.NullString(c.ClientIP()),
 		UserAgent:     store.NullString(truncate(c.Request.UserAgent(), 512)),
 		ContentType:   store.NullString(truncate(c.ContentType(), 128)),

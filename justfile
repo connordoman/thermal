@@ -90,7 +90,7 @@ pi-install:
 pi-update:
     ssh -t {{pi_host}} 'sudo systemctl start thermal-update && sudo docker compose --project-directory /opt/thermal ps'
 
-# Follow the logs on the Pi (the bootstrap key is printed on first start)
+# Follow the logs on the Pi (the root password is printed on first start)
 pi-logs:
     ssh -t {{pi_host}} 'sudo docker compose --project-directory /opt/thermal logs -f'
 

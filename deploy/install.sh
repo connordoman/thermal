@@ -74,7 +74,7 @@ systemctl enable --now docker.service thermal-update.timer
 echo "==> Starting thermal"
 systemctl start thermal-update.service
 sleep 3
-docker compose --project-directory "$dir" logs thermal | grep -A3 -i bootstrap || true
+docker compose --project-directory "$dir" logs thermal | grep -A5 "Root user" || true
 
 cat <<DONE
 

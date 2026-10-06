@@ -85,10 +85,10 @@ func (q *Queries) CountJobsByStatus(ctx context.Context) ([]CountJobsByStatusRow
 
 const createJob = `-- name: CreateJob :one
 INSERT INTO jobs (
-    kind, priority, label, copies, api_key_id, client_ip, user_agent,
+    kind, priority, label, copies, api_key_id, username, client_ip, user_agent,
     content_type, source, source_size, payload, payload_size, payload_sha256,
     retry_of, created_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id
 `
 
@@ -98,6 +98,7 @@ type CreateJobParams struct {
 	Label         sql.NullString
 	Copies        int64
 	ApiKeyID      sql.NullString
+	Username      sql.NullString
 	ClientIp      sql.NullString
 	UserAgent     sql.NullString
 	ContentType   sql.NullString
@@ -117,6 +118,7 @@ func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) (int64, er
 		arg.Label,
 		arg.Copies,
 		arg.ApiKeyID,
+		arg.Username,
 		arg.ClientIp,
 		arg.UserAgent,
 		arg.ContentType,
@@ -174,8 +176,8 @@ func (q *Queries) FinishJob(ctx context.Context, arg FinishJobParams) error {
 }
 
 const getJob = `-- name: GetJob :one
-SELECT id, kind, status, priority, label, copies, api_key_id, client_ip,
-       user_agent, content_type, source_size, payload_size, payload_sha256,
+SELECT id, kind, status, priority, label, copies, api_key_id, username,
+       client_ip, user_agent, content_type, source_size, payload_size, payload_sha256,
        attempts, error, confirmed, retry_of, created_at, started_at,
        finished_at, purged_at
 FROM jobs WHERE id = ?
@@ -189,6 +191,7 @@ type GetJobRow struct {
 	Label         sql.NullString
 	Copies        int64
 	ApiKeyID      sql.NullString
+	Username      sql.NullString
 	ClientIp      sql.NullString
 	UserAgent     sql.NullString
 	ContentType   sql.NullString
@@ -216,6 +219,7 @@ func (q *Queries) GetJob(ctx context.Context, id int64) (GetJobRow, error) {
 		&i.Label,
 		&i.Copies,
 		&i.ApiKeyID,
+		&i.Username,
 		&i.ClientIp,
 		&i.UserAgent,
 		&i.ContentType,
@@ -310,24 +314,26 @@ func (q *Queries) HasQueuedJobs(ctx context.Context) (bool, error) {
 }
 
 const listJobs = `-- name: ListJobs :many
-SELECT id, kind, status, priority, label, copies, api_key_id, client_ip,
-       user_agent, content_type, source_size, payload_size, payload_sha256,
+SELECT id, kind, status, priority, label, copies, api_key_id, username,
+       client_ip, user_agent, content_type, source_size, payload_size, payload_sha256,
        attempts, error, confirmed, retry_of, created_at, started_at,
        finished_at, purged_at
 FROM jobs
 WHERE (status = ?1 OR ?1 IS NULL)
   AND (kind = ?2 OR ?2 IS NULL)
   AND (api_key_id = ?3 OR ?3 IS NULL)
-  AND (id < ?4 OR ?4 IS NULL)
-  AND (created_at >= ?5 OR ?5 IS NULL)
+  AND (username = ?4 OR ?4 IS NULL)
+  AND (id < ?5 OR ?5 IS NULL)
+  AND (created_at >= ?6 OR ?6 IS NULL)
 ORDER BY id DESC
-LIMIT ?6
+LIMIT ?7
 `
 
 type ListJobsParams struct {
 	Status   sql.NullString
 	Kind     sql.NullString
 	ApiKeyID sql.NullString
+	Username sql.NullString
 	BeforeID sql.NullInt64
 	Since    sql.NullInt64
 	Limit    int64
@@ -341,6 +347,7 @@ type ListJobsRow struct {
 	Label         sql.NullString
 	Copies        int64
 	ApiKeyID      sql.NullString
+	Username      sql.NullString
 	ClientIp      sql.NullString
 	UserAgent     sql.NullString
 	ContentType   sql.NullString
@@ -362,6 +369,7 @@ func (q *Queries) ListJobs(ctx context.Context, arg ListJobsParams) ([]ListJobsR
 		arg.Status,
 		arg.Kind,
 		arg.ApiKeyID,
+		arg.Username,
 		arg.BeforeID,
 		arg.Since,
 		arg.Limit,
@@ -381,6 +389,7 @@ func (q *Queries) ListJobs(ctx context.Context, arg ListJobsParams) ([]ListJobsR
 			&i.Label,
 			&i.Copies,
 			&i.ApiKeyID,
+			&i.Username,
 			&i.ClientIp,
 			&i.UserAgent,
 			&i.ContentType,
@@ -410,8 +419,8 @@ func (q *Queries) ListJobs(ctx context.Context, arg ListJobsParams) ([]ListJobsR
 }
 
 const listQueuedJobs = `-- name: ListQueuedJobs :many
-SELECT id, kind, status, priority, label, copies, api_key_id, client_ip,
-       user_agent, content_type, source_size, payload_size, payload_sha256,
+SELECT id, kind, status, priority, label, copies, api_key_id, username,
+       client_ip, user_agent, content_type, source_size, payload_size, payload_sha256,
        attempts, error, confirmed, retry_of, created_at, started_at,
        finished_at, purged_at
 FROM jobs WHERE status = 'queued'
@@ -427,6 +436,7 @@ type ListQueuedJobsRow struct {
 	Label         sql.NullString
 	Copies        int64
 	ApiKeyID      sql.NullString
+	Username      sql.NullString
 	ClientIp      sql.NullString
 	UserAgent     sql.NullString
 	ContentType   sql.NullString
@@ -461,6 +471,7 @@ func (q *Queries) ListQueuedJobs(ctx context.Context, limit int64) ([]ListQueued
 			&i.Label,
 			&i.Copies,
 			&i.ApiKeyID,
+			&i.Username,
 			&i.ClientIp,
 			&i.UserAgent,
 			&i.ContentType,

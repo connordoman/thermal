@@ -2,7 +2,13 @@ package settings
 
 import (
 	"errors"
+	"fmt"
+	"net/url"
+	"os"
+	"strings"
 	"time"
+
+	"github.com/connordoman/thermal/internal/auth"
 )
 
 const (
@@ -15,6 +21,14 @@ const (
 	EnvImageAllowLocal = "THERMAL_IMAGE_ALLOW_PRIVATE_HOSTS"
 	EnvImageMaxBytes   = "THERMAL_IMAGE_MAX_BYTES"
 	EnvImageTimeout    = "THERMAL_IMAGE_TIMEOUT"
+
+	// User accounts and sessions.
+	EnvSessionTTL       = "THERMAL_SESSION_TTL"        // how long a sign-in lasts, default 24h
+	EnvSessionSecure    = "THERMAL_SESSION_SECURE"     // send the session cookie only over HTTPS, default false
+	EnvTrustedOrigins   = "THERMAL_TRUSTED_ORIGINS"    // comma-separated origins allowed to make cookie-authenticated requests cross-origin
+	EnvRootUser         = "THERMAL_ROOT_USER"          // the root user's name, default root; used when the root user is created
+	EnvRootPassword     = "THERMAL_ROOT_PASSWORD"      // the root user's initial password; random and printed once if unset
+	EnvRootPasswordFile = "THERMAL_ROOT_PASSWORD_FILE" // read the initial password from this file instead (e.g. a Docker secret)
 )
 
 type ServerConfig struct {
@@ -31,6 +45,14 @@ type ServerConfig struct {
 	ImageAllowPrivateHosts bool
 	ImageMaxBytes          int64
 	ImageTimeout           time.Duration
+
+	SessionTTL     time.Duration
+	SessionSecure  bool
+	TrustedOrigins []string
+	// RootUser and RootPassword apply only when the root user is created,
+	// on first start.
+	RootUser     string
+	RootPassword string
 }
 
 func NewServerConfig() *ServerConfig {
@@ -65,6 +87,28 @@ func (s *ServerConfig) Load() error {
 	add(err)
 	s.ImageTimeout, err = envDuration(EnvImageTimeout, 10*time.Second)
 	add(err)
+	s.SessionTTL, err = envDuration(EnvSessionTTL, 24*time.Hour)
+	add(err)
+	s.SessionSecure, err = envBool(EnvSessionSecure, false)
+	add(err)
+	s.TrustedOrigins = nil
+	for o := range strings.SplitSeq(envString(EnvTrustedOrigins, ""), ",") {
+		if o = strings.TrimSpace(o); o != "" {
+			s.TrustedOrigins = append(s.TrustedOrigins, strings.TrimSuffix(o, "/"))
+		}
+	}
+	s.RootUser = envString(EnvRootUser, "root")
+	s.RootPassword = os.Getenv(EnvRootPassword)
+	if f := envString(EnvRootPasswordFile, ""); f != "" {
+		if s.RootPassword != "" {
+			add(configError(EnvRootPasswordFile, "set "+EnvRootPassword+" or "+EnvRootPasswordFile+", not both"))
+		}
+		b, err := os.ReadFile(f)
+		if err != nil {
+			add(configError(EnvRootPasswordFile, err.Error()))
+		}
+		s.RootPassword = strings.TrimRight(string(b), "\r\n")
+	}
 	return errors.Join(errs...)
 }
 
@@ -78,6 +122,20 @@ func (s *ServerConfig) Validate() error {
 	}
 	if s.ImageTimeout <= 0 {
 		errs = append(errs, configError(EnvImageTimeout, "must be positive"))
+	}
+	if s.SessionTTL < time.Minute {
+		errs = append(errs, configError(EnvSessionTTL, "must be at least 1m"))
+	}
+	if s.RootPassword != "" && auth.CheckPassword(s.RootPassword) != nil {
+		errs = append(errs, configError(EnvRootPassword, auth.ErrWeakPassword.Error()))
+	}
+	if _, err := auth.NormalizeUsername(s.RootUser); err != nil {
+		errs = append(errs, configError(EnvRootUser, err.Error()))
+	}
+	for _, o := range s.TrustedOrigins {
+		if u, err := url.Parse(o); err != nil || u.Scheme == "" || u.Host == "" || u.Path != "" {
+			errs = append(errs, configError(EnvTrustedOrigins, fmt.Sprintf("%q is not an origin such as https://thermal.example.com", o)))
+		}
 	}
 	if s.Retention < 0 {
 		errs = append(errs, configError(EnvThermalRetain, "must not be negative"))

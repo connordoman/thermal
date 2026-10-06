@@ -11,13 +11,14 @@ import (
 )
 
 const insertAuditEvent = `-- name: InsertAuditEvent :exec
-INSERT INTO audit_events (at, actor_key_id, action, target, detail, client_ip)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO audit_events (at, actor_key_id, actor_user, action, target, detail, client_ip)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertAuditEventParams struct {
 	At         int64
 	ActorKeyID sql.NullString
+	ActorUser  sql.NullString
 	Action     string
 	Target     sql.NullString
 	Detail     sql.NullString
@@ -28,6 +29,7 @@ func (q *Queries) InsertAuditEvent(ctx context.Context, arg InsertAuditEventPara
 	_, err := q.db.ExecContext(ctx, insertAuditEvent,
 		arg.At,
 		arg.ActorKeyID,
+		arg.ActorUser,
 		arg.Action,
 		arg.Target,
 		arg.Detail,
@@ -37,17 +39,19 @@ func (q *Queries) InsertAuditEvent(ctx context.Context, arg InsertAuditEventPara
 }
 
 const listAuditEvents = `-- name: ListAuditEvents :many
-SELECT id, at, actor_key_id, "action", target, detail, client_ip FROM audit_events
+SELECT id, at, actor_key_id, "action", target, detail, client_ip, actor_user FROM audit_events
 WHERE (action = ?1 OR ?1 IS NULL)
   AND (actor_key_id = ?2 OR ?2 IS NULL)
-  AND (id < ?3 OR ?3 IS NULL)
+  AND (actor_user = ?3 OR ?3 IS NULL)
+  AND (id < ?4 OR ?4 IS NULL)
 ORDER BY id DESC
-LIMIT ?4
+LIMIT ?5
 `
 
 type ListAuditEventsParams struct {
 	Action     sql.NullString
 	ActorKeyID sql.NullString
+	ActorUser  sql.NullString
 	BeforeID   sql.NullInt64
 	Limit      int64
 }
@@ -56,6 +60,7 @@ func (q *Queries) ListAuditEvents(ctx context.Context, arg ListAuditEventsParams
 	rows, err := q.db.QueryContext(ctx, listAuditEvents,
 		arg.Action,
 		arg.ActorKeyID,
+		arg.ActorUser,
 		arg.BeforeID,
 		arg.Limit,
 	)
@@ -74,6 +79,7 @@ func (q *Queries) ListAuditEvents(ctx context.Context, arg ListAuditEventsParams
 			&i.Target,
 			&i.Detail,
 			&i.ClientIp,
+			&i.ActorUser,
 		); err != nil {
 			return nil, err
 		}

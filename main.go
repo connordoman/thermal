@@ -47,7 +47,8 @@ func init() {
 
 func main() {
 	healthcheck := flag.Bool("healthcheck", false, "exit 0 if the server on THERMAL_ADDR is healthy, 1 otherwise (for container health checks)")
-	newAdmin := flag.String("new-admin-key", "", "create an admin key with this name, print it and exit (for when every admin key is lost)")
+	newAdmin := flag.String("new-admin-key", "", "create an admin key with this name, print it and exit")
+	resetRoot := flag.Bool("reset-root-password", false, "give the root user a new random password, print it and exit")
 	flag.Parse()
 
 	cfg := settings.Global
@@ -65,6 +66,7 @@ func main() {
 	}
 	defer db.Close()
 	keys := auth.NewManager(db.Queries)
+	users := auth.NewUsers(db.Queries, cfg.Server.SessionTTL)
 
 	if *newAdmin != "" {
 		full, _, err := keys.Create(ctx, *newAdmin, []auth.Scope{auth.ScopeAdmin}, nil, "cli")
@@ -74,8 +76,20 @@ func main() {
 		fmt.Println(full)
 		return
 	}
-	if err := bootstrap(ctx, db, keys); err != nil {
-		console.Fatal("creating the bootstrap key: %v", err)
+	if err := ensureRoot(ctx, db, users); err != nil {
+		console.Fatal("creating the root user: %v", err)
+	}
+	if *resetRoot {
+		u, password, err := users.ResetRootPassword(ctx)
+		if err != nil {
+			console.Fatal("resetting the root password: %v", err)
+		}
+		_ = db.InsertAuditEvent(ctx, dbq.InsertAuditEventParams{
+			At: store.Now(), Action: "user.password_reset", Target: store.NullString(u.Username),
+		})
+		fmt.Fprintf(os.Stderr, "New password for %s:\n", u.Username)
+		fmt.Println(password)
+		return
 	}
 
 	dev, err := device.New(device.Config{
@@ -108,12 +122,16 @@ func main() {
 	srv := &server.Server{
 		Store:        db,
 		Keys:         keys,
+		Users:        users,
 		Device:       dev,
 		Queue:        q,
 		Images:       render.NewImageLoader(cfg.Server.ImageAllowPrivateHosts, cfg.Server.ImageMaxBytes, cfg.Server.ImageTimeout),
 		MaxBodyBytes: cfg.Server.MaxBodyBytes,
 		Debug:        cfg.Server.Debug,
 		CutFeed:      cfg.Server.CutFeed,
+
+		SessionSecure:  cfg.Server.SessionSecure,
+		TrustedOrigins: cfg.Server.TrustedOrigins,
 	}
 	httpServer := &http.Server{
 		Addr:              cfg.Server.Addr,
@@ -143,31 +161,33 @@ func main() {
 	}
 }
 
-// bootstrap creates the first admin key when the database is new (or has no
-// usable keys) and prints it once.
-func bootstrap(ctx context.Context, db *store.Store, keys *auth.Manager) error {
-	n, err := db.CountActiveAPIKeys(ctx)
-	if err != nil {
-		return err
-	}
-	if !db.Created && n > 0 {
-		return nil
-	}
-	full, k, err := keys.Create(ctx, "bootstrap", []auth.Scope{auth.ScopeAdmin}, nil, "server")
-	if err != nil {
+// ensureRoot creates the root user the first time the server starts (or
+// the first time after upgrading to a version with user accounts). Like a
+// database server's superuser, its name and password come from the
+// environment; a password that was not given is generated and printed once.
+func ensureRoot(ctx context.Context, db *store.Store, users *auth.Users) error {
+	cfg := settings.Global.Server
+	u, generated, created, err := users.EnsureRoot(ctx, cfg.RootUser, cfg.RootPassword)
+	if err != nil || !created {
 		return err
 	}
 	_ = db.InsertAuditEvent(ctx, dbq.InsertAuditEventParams{
-		At: store.Now(), Action: "key.bootstrap", Target: store.NullString(k.ID),
+		At: store.Now(), Action: "user.created", Target: store.NullString(u.Username), Detail: store.NullString(`{"root":true}`),
 	})
+	if generated == "" {
+		console.Info("created root user %q with the password from the environment", u.Username)
+		return nil
+	}
 	line := strings.Repeat("─", 72)
-	fmt.Fprintf(os.Stderr, "\n%s\n  Bootstrap admin API key (shown once):\n\n    %s\n\n"+
-		"  Use it to create keys for your apps:\n\n"+
-		"    curl -X POST http://localhost%s/v1/keys \\\n"+
-		"      -H 'Authorization: Bearer %s' \\\n"+
-		"      -d '{\"name\":\"my-app\",\"scopes\":[\"print\",\"read\"]}'\n\n"+
-		"  Then revoke or rotate it: DELETE /v1/keys/%s once you have another admin key.\n%s\n\n",
-		line, full, addrPort(settings.Global.Server.Addr), full, k.ID, line)
+	fmt.Fprintf(os.Stderr, "\n%s\n  Root user created (password shown once):\n\n"+
+		"    username: %s\n    password: %s\n\n"+
+		"  Sign in to the web UI with it, or start a session from the command line:\n\n"+
+		"    curl -c cookies.txt -X POST http://localhost%s/v1/session \\\n"+
+		"      -H 'Content-Type: application/json' \\\n"+
+		"      -d '{\"username\":\"%s\",\"password\":\"...\"}'\n\n"+
+		"  Set %s before the first start to choose the password instead.\n"+
+		"  Lost it? Run: thermal -reset-root-password\n%s\n\n",
+		line, u.Username, generated, addrPort(cfg.Addr), u.Username, settings.EnvRootPassword, line)
 	return nil
 }
 
