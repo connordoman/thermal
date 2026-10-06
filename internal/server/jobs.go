@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/connordoman/thermal/internal/queue"
@@ -25,6 +26,7 @@ type jobJSON struct {
 	Label         string     `json:"label,omitempty"`
 	Copies        int64      `json:"copies"`
 	APIKeyID      string     `json:"api_key_id,omitempty"`
+	Username      string     `json:"username,omitempty"`
 	ClientIP      string     `json:"client_ip,omitempty"`
 	UserAgent     string     `json:"user_agent,omitempty"`
 	ContentType   string     `json:"content_type,omitempty"`
@@ -46,7 +48,7 @@ func jobFinished(status string) bool { return queue.Finished(status) }
 func toJobJSON(j dbq.GetJobRow) jobJSON {
 	out := jobJSON{
 		ID: j.ID, Kind: j.Kind, Status: j.Status, Priority: j.Priority, Label: j.Label.String,
-		Copies: j.Copies, APIKeyID: j.ApiKeyID.String, ClientIP: j.ClientIp.String,
+		Copies: j.Copies, APIKeyID: j.ApiKeyID.String, Username: j.Username.String, ClientIP: j.ClientIp.String,
 		UserAgent: j.UserAgent.String, ContentType: j.ContentType.String,
 		SourceSize: j.SourceSize, PayloadSize: j.PayloadSize, PayloadSHA256: j.PayloadSha256,
 		Attempts: j.Attempts, Error: j.Error.String, Confirmed: j.Confirmed != 0,
@@ -96,6 +98,7 @@ func (s *Server) listJobs(c *gin.Context) {
 		Status:   store.NullString(q.str("status", "")),
 		Kind:     store.NullString(q.str("kind", "")),
 		ApiKeyID: store.NullString(q.str("key", "")),
+		Username: store.NullString(strings.ToLower(q.str("user", ""))),
 		BeforeID: store.NullInt(int64(q.int("before", 0, 0, math.MaxInt))),
 		Limit:    int64(limit),
 	}
@@ -121,9 +124,17 @@ func (s *Server) listJobs(c *gin.Context) {
 	}
 	resp := gin.H{"jobs": jobs}
 	if len(rows) == limit {
-		resp["next"] = fmt.Sprintf("/v1/jobs?before=%d&limit=%d", rows[len(rows)-1].ID, limit)
+		resp["next"] = nextPage(c, rows[len(rows)-1].ID)
 	}
 	c.JSON(http.StatusOK, resp)
+}
+
+// nextPage links to the page after the one being returned: the same
+// request, filters and all, continuing before the last ID.
+func nextPage(c *gin.Context, lastID int64) string {
+	q := c.Request.URL.Query()
+	q.Set("before", itoa(lastID))
+	return c.Request.URL.Path + "?" + q.Encode()
 }
 
 func (s *Server) getJob(c *gin.Context) {
@@ -225,14 +236,14 @@ func (s *Server) retryJob(c *gin.Context) {
 		abort(c, http.StatusGone, "purged", "the job's data has been purged, so it cannot be retried")
 		return
 	}
-	key := currentKey(c)
+	who := currentPrincipal(c)
 	priority := old.Priority
 	if q.has("priority") {
 		priority = int64(o.priority)
 	}
 	newID, err := s.Queue.Submit(c, dbq.CreateJobParams{
 		Kind: old.Kind, Priority: priority, Label: old.Label, Copies: old.Copies,
-		ApiKeyID: store.NullString(key.ID), ClientIp: store.NullString(c.ClientIP()),
+		ApiKeyID: store.NullString(who.keyID), Username: store.NullString(who.username()), ClientIp: store.NullString(c.ClientIP()),
 		UserAgent: store.NullString(truncate(c.Request.UserAgent(), 512)), ContentType: old.ContentType,
 		Source: old.Source, SourceSize: old.SourceSize, Payload: old.Payload,
 		PayloadSize: old.PayloadSize, PayloadSha256: old.PayloadSha256,

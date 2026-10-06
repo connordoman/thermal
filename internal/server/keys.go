@@ -7,7 +7,6 @@ import (
 	"errors"
 	"math"
 	"net/http"
-	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -139,7 +138,7 @@ func (s *Server) createKey(c *gin.Context) {
 		abort(c, http.StatusUnprocessableEntity, "invalid_body", err.Error())
 		return
 	}
-	full, k, err := s.Keys.Create(c, name, scopes, exp, currentKey(c).ID)
+	full, k, err := s.Keys.Create(c, name, scopes, exp, currentPrincipal(c).actor())
 	if err != nil {
 		abort(c, http.StatusInternalServerError, "internal", err.Error())
 		return
@@ -151,23 +150,6 @@ func (s *Server) createKey(c *gin.Context) {
 		"key":     toKeyJSON(k),
 		"warning": "store this key now; it cannot be shown again",
 	})
-}
-
-// activeAdmins counts usable admin keys other than except.
-func (s *Server) activeAdmins(ctx context.Context, except string) (int, error) {
-	keys, err := s.Store.ListAPIKeys(ctx, false)
-	if err != nil {
-		return 0, err
-	}
-	n := 0
-	now := store.Now()
-	for _, k := range keys {
-		if k.ID != except && (!k.ExpiresAt.Valid || k.ExpiresAt.Int64 > now) &&
-			slices.Contains(auth.SplitScopes(k.Scopes), auth.ScopeAdmin) {
-			n++
-		}
-	}
-	return n, nil
 }
 
 func (s *Server) updateKey(c *gin.Context) {
@@ -201,12 +183,6 @@ func (s *Server) updateKey(c *gin.Context) {
 		if err != nil {
 			abort(c, http.StatusUnprocessableEntity, "invalid_body", err.Error())
 			return
-		}
-		if !slices.Contains(scopes, auth.ScopeAdmin) && slices.Contains(auth.SplitScopes(k.Scopes), auth.ScopeAdmin) {
-			if n, err := s.activeAdmins(c, k.ID); err != nil || n == 0 {
-				abort(c, http.StatusConflict, "last_admin", "this is the last admin key; create another before removing its admin scope")
-				return
-			}
 		}
 		p.Scopes = auth.JoinScopes(scopes)
 	}
@@ -277,12 +253,6 @@ func (s *Server) revokeKey(c *gin.Context) {
 		notFoundOr(c, err, "key")
 		return
 	}
-	if slices.Contains(auth.SplitScopes(k.Scopes), auth.ScopeAdmin) && !k.RevokedAt.Valid {
-		if n, err := s.activeAdmins(c, k.ID); err != nil || n == 0 {
-			abort(c, http.StatusConflict, "last_admin", "this is the last admin key; create another before revoking it")
-			return
-		}
-	}
 	n, err := s.Store.RevokeAPIKey(c, dbq.RevokeAPIKeyParams{RevokedAt: sql.NullInt64{Int64: store.Now(), Valid: true}, ID: k.ID})
 	if err != nil {
 		abort(c, http.StatusInternalServerError, "internal", err.Error())
@@ -297,18 +267,23 @@ func (s *Server) revokeKey(c *gin.Context) {
 // audit records an action. Failures are logged, not returned: the action
 // itself has already happened.
 func (s *Server) audit(c *gin.Context, action, target string, detail any) {
+	var keyID, username string
+	if p := currentPrincipal(c); p != nil {
+		keyID, username = p.keyID, p.username()
+	}
+	s.auditAs(c, keyID, username, action, target, detail)
+}
+
+// auditAs records an action by the given key or user.
+func (s *Server) auditAs(c *gin.Context, keyID, username, action, target string, detail any) {
 	var d sql.NullString
 	if detail != nil {
 		if b, err := json.Marshal(detail); err == nil {
 			d = sql.NullString{String: string(b), Valid: true}
 		}
 	}
-	actor := ""
-	if k := currentKey(c); k != nil {
-		actor = k.ID
-	}
 	err := s.Store.InsertAuditEvent(context.WithoutCancel(c), dbq.InsertAuditEventParams{
-		At: store.Now(), ActorKeyID: store.NullString(actor), Action: action,
+		At: store.Now(), ActorKeyID: store.NullString(keyID), ActorUser: store.NullString(username), Action: action,
 		Target: store.NullString(target), Detail: d, ClientIp: store.NullString(c.ClientIP()),
 	})
 	if err != nil {
@@ -322,6 +297,7 @@ func (s *Server) listAudit(c *gin.Context) {
 	p := dbq.ListAuditEventsParams{
 		Action:     store.NullString(q.str("action", "")),
 		ActorKeyID: store.NullString(q.str("actor", "")),
+		ActorUser:  store.NullString(strings.ToLower(q.str("user", ""))),
 		BeforeID:   store.NullInt(int64(q.int("before", 0, 0, math.MaxInt))),
 		Limit:      int64(limit),
 	}
@@ -338,6 +314,7 @@ func (s *Server) listAudit(c *gin.Context) {
 		ID       int64           `json:"id"`
 		At       time.Time       `json:"at"`
 		Actor    string          `json:"actor_key_id,omitempty"`
+		User     string          `json:"actor_user,omitempty"`
 		Action   string          `json:"action"`
 		Target   string          `json:"target,omitempty"`
 		Detail   json.RawMessage `json:"detail,omitempty"`
@@ -345,14 +322,14 @@ func (s *Server) listAudit(c *gin.Context) {
 	}
 	out := make([]event, len(rows))
 	for i, r := range rows {
-		out[i] = event{r.ID, time.UnixMilli(r.At).UTC(), r.ActorKeyID.String, r.Action, r.Target.String, nil, r.ClientIp.String}
+		out[i] = event{r.ID, time.UnixMilli(r.At).UTC(), r.ActorKeyID.String, r.ActorUser.String, r.Action, r.Target.String, nil, r.ClientIp.String}
 		if r.Detail.Valid {
 			out[i].Detail = json.RawMessage(r.Detail.String)
 		}
 	}
 	resp := gin.H{"events": out}
 	if len(rows) == limit {
-		resp["next"] = "/v1/audit?before=" + itoa(rows[len(rows)-1].ID)
+		resp["next"] = nextPage(c, rows[len(rows)-1].ID)
 	}
 	c.JSON(http.StatusOK, resp)
 }

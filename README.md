@@ -15,20 +15,21 @@ It is built on [`github.com/connordoman/escpos`](https://github.com/connordoman/
 go run .
 ```
 
-On first start (when there is no database) the server prints a bootstrap admin key:
+On first start the server creates a **root** user and prints its password once (set `THERMAL_ROOT_PASSWORD` beforehand to choose it instead, as with a database server's superuser):
 
 ```
-  Bootstrap admin API key (shown once):
+  Root user created (password shown once):
 
-    thm_4ew1ay37_Y53yAWuKVH3CJbNfELMeHj4GItqQJycq
+    username: root
+    password: 4ew1ay37Y53yAWuKVH3CJbNf
 ```
 
-Use it to create a key for each app, then retire it:
+Sign in to the web UI (`thermal-ui`) with it, or with curl, and create an API key for each app:
 
 ```sh
-ADMIN=thm_4ew1ay37_...
-curl -X POST localhost:8080/v1/keys -H "Authorization: Bearer $ADMIN" \
-  -d '{"name":"pos","scopes":["print","read"]}'
+curl -c cookies.txt -X POST localhost:8080/v1/session \
+  -H 'Content-Type: application/json' -d '{"username":"root","password":"4ew1ay37..."}'
+curl -b cookies.txt -X POST localhost:8080/v1/keys -d '{"name":"pos","scopes":["print","read"]}'
 # {"secret":"thm_ji4oyx8x_3mNk...", "key":{...}, "warning":"store this key now; ..."}
 
 KEY=thm_ji4oyx8x_3mNk...
@@ -37,7 +38,7 @@ curl -X POST localhost:8080/v1/print/markdown -H "Authorization: Bearer $KEY" --
 curl -X POST localhost:8080/v1/print/json -H "Authorization: Bearer $KEY" --data-binary @examples/receipt.json
 ```
 
-If you lose every admin key, run `thermal -new-admin-key <name>` on the server to issue a new one.
+If you lose the root password, run `thermal -reset-root-password` on the server for a new one. `thermal -new-admin-key <name>` issues an admin API key.
 
 ## Configuration
 
@@ -58,6 +59,12 @@ Settings come from the environment, or a `.env` file in the working directory.
 | `THERMAL_IMAGE_MAX_BYTES`               | `10485760`   | Largest image that will be downloaded or decoded                                            |
 | `THERMAL_IMAGE_TIMEOUT`                 | `10s`        | Time limit for downloading one image                                                        |
 | `THERMAL_DEBUG`                         | `false`      | Debug logging and Gin debug mode                                                            |
+| `THERMAL_SESSION_TTL` | `24h` | How long a sign-in lasts |
+| `THERMAL_SESSION_SECURE` | `false` | Mark the session cookie `Secure`, so browsers only send it over HTTPS. Turn it on when the server (or the UI in front of it) is served over HTTPS |
+| `THERMAL_TRUSTED_ORIGINS` | | Comma-separated origins, such as `https://print.example.com`, allowed to make cookie-authenticated requests cross-origin. Not needed when the UI proxies the API on its own origin |
+| `THERMAL_ROOT_USER` | `root` | The root user's name, used when it is created |
+| `THERMAL_ROOT_PASSWORD` | | The root user's initial password (8 or more characters). Random and printed once if unset. Only used when the root user is created; change it later through the API |
+| `THERMAL_ROOT_PASSWORD_FILE` | | Read the initial password from a file instead, such as a Docker secret |
 | `THERMAL_CUT_FEED` | `96` | Dots of paper (8 per mm, so 12 mm by default) fed past the last line before each cut. The cutter sits about 2 cm above the print head, so jobs also start with that much blank paper; the printer cannot feed backwards to save it |
 
 `ESCPOS_CONNECTION` is an [`escpos.Open`](https://github.com/connordoman/escpos#connection-strings-and-reconnecting) connection string:
@@ -82,6 +89,10 @@ GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o thermal .
 
 ## Authentication
 
+Apps use **API keys**; people use **user accounts**, which sign in for a session cookie (this is how the web UI works).
+
+### API keys
+
 Send a key in either header:
 
 ```
@@ -91,11 +102,13 @@ X-API-Key: thm_ji4oyx8x_3mNktPjsRjbGX527EzNrhwkJx4JLAYE0
 
 A key is `thm_` + an 8-character public ID + a 32-character secret. The ID appears in logs, the job list and the audit log, so you can tell which app did what without ever seeing a secret. The server stores only a SHA-256 hash of each secret.
 
+Users and keys share the same scopes:
+
 | Scope   | Allows                                                   |
 | ------- | -------------------------------------------------------- |
 | `print` | Submitting (except raw bytes), cancelling and retrying jobs |
 | `read`  | Printer information, the queue and job records           |
-| `admin` | Everything, plus raw byte jobs, managing keys and reading the audit log |
+| `admin` | Everything, plus raw byte jobs, managing keys and users, and reading the audit log |
 
 | Endpoint                              |                                                                                                                                      |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
@@ -105,9 +118,25 @@ A key is `thm_` + an 8-character public ID + a 32-character secret. The ID appea
 | `PATCH /v1/keys/:id`                  | Change `name`, `scopes`, `expires_in` or `expires_at` (`null` clears it)                                                             |
 | `POST /v1/keys/:id/rotate`            | New secret, same ID. With `{"grace": "24h"}` the old secret keeps working for that long, so clients can switch over without downtime |
 | `DELETE /v1/keys/:id`                 | Revoke                                                                                                                               |
-| `GET /v1/whoami`                      | The calling key (any scope)                                                                                                          |
+| `GET /v1/whoami`                      | The caller: `{"type": "key", "id", "name", "scopes"}` or `{"type": "user", "username", "scopes", "root"}`                         |
 
-The last usable admin key cannot be revoked or lose its admin scope.
+### Users and sessions
+
+| Endpoint | |
+|---|---|
+| `POST /v1/session` | Sign in with `{"username", "password"}`. Returns `201` with the user and the session's expiry, and sets the `thermal_session` cookie (`HttpOnly`, `SameSite=Lax`) |
+| `GET /v1/session` | The current session and its user |
+| `DELETE /v1/session` | Sign out (`204`) |
+| `PUT /v1/users/:username/password` | `{"password", "current_password"}` changes your own password and signs out your other sessions. Admins can set anyone's without `current_password`, which signs that user out everywhere |
+| `GET /v1/users[?include_disabled=true]` | List users (admin) |
+| `POST /v1/users` | `{"username", "password", "scopes"}` (admin) |
+| `GET /v1/users/:username` | One user (admin) |
+| `PATCH /v1/users/:username` | Change `scopes`, or `disabled` (`true`/`false`) (admin) |
+| `DELETE /v1/users/:username` | Disable a user and end their sessions (admin). Like revoked keys, disabled users are kept so their jobs stay attributable |
+
+Usernames are case-insensitive, stored lowercase and never change. Passwords are 8–256 characters, hashed with Argon2id. A session lasts `THERMAL_SESSION_TTL` from sign-in. After 10 failed sign-ins in 15 minutes, a username is locked out for the rest of that window (`429` with `Retry-After`).
+
+The **root** user is created on first start (see [Quick start](#quick-start)), always has the `admin` scope and cannot be disabled, so there is always a way back in. An API key in a header takes precedence over a session cookie. Requests authenticated by a cookie that change anything (`POST`, `PATCH`, `PUT`, `DELETE`) must come from the same origin, checked with `Sec-Fetch-Site` and `Origin`, so other sites cannot act with a signed-in browser's cookie. Jobs record the `username` that submitted them (filter with `GET /v1/jobs?user=`), and audit events their `actor_user` (`GET /v1/audit?user=`).
 
 ## Printing
 
@@ -274,13 +303,13 @@ Jobs interrupted by a shutdown are marked `failed`, not reprinted, since they ma
 
 | Endpoint                   |                                                                                                                                   |
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /v1/jobs`             | Newest first. Filters: `status`, `kind`, `key` (key ID), `since` (RFC 3339), `before` (job ID cursor), `limit` (≤ 500)            |
-| `GET /v1/jobs/:id`         | One job: who submitted it (key, IP, user agent), sizes, SHA-256 of the payload, attempts, error, timings                          |
+| `GET /v1/jobs`             | Newest first. Filters: `status`, `kind`, `key` (key ID), `user` (username), `since` (RFC 3339), `before` (job ID cursor), `limit` (≤ 500) |
+| `GET /v1/jobs/:id`         | One job: who submitted it (key or user, IP, user agent), sizes, SHA-256 of the payload, attempts, error, timings                  |
 | `GET /v1/jobs/:id/source`  | The request body as received                                                                                                      |
 | `GET /v1/jobs/:id/payload` | The exact ESC/POS bytes sent to the printer                                                                                       |
 | `POST /v1/jobs/:id/cancel` | Cancel a queued job                                                                                                               |
 | `POST /v1/jobs/:id/retry`  | Queue a copy of any job (`retry_of` links them)                                                                                   |
-| `GET /v1/audit`            | Key creation, rotation, revocation and changes, plus job cancellations and retries. Filters: `action`, `actor`, `before`, `limit` |
+| `GET /v1/audit`            | Key and user changes, sign-ins (and failed ones), job cancellations and retries. Filters: `action`, `actor` (key ID), `user`, `before`, `limit` |
 
 Bodies and payloads are purged after `THERMAL_RETENTION`; the job records themselves are kept.
 
@@ -303,7 +332,7 @@ Run this once on the Pi. It installs Docker if needed, writes `/opt/thermal/comp
 curl -fsSL https://raw.githubusercontent.com/connordoman/thermal/main/deploy/install.sh | sudo sh
 ```
 
-Or run `just pi-install` from your Mac, which does the same over SSH (set `PI_HOST`, default `pi@pos.local`). The bootstrap key is printed at the end; if you miss it, run `just pi-logs`. Running the script again refreshes `compose.yaml` and the timer but keeps your `.env`.
+Or run `just pi-install` from your Mac, which does the same over SSH (set `PI_HOST`, default `pi@pos.local`). The root user's password is printed at the end; if you miss it, run `just pi-logs`. Running the script again refreshes `compose.yaml` and the timer but keeps your `.env`.
 
 Server settings go in `/opt/thermal/.env`, along with `THERMAL_TAG`, which picks the channel: `latest` (default), `edge`, or a pinned version such as `0.2.0`. Run `sudo systemctl start thermal-update` to apply changes immediately.
 
@@ -352,7 +381,7 @@ Environment=THERMAL_ADDR=:8080
 WantedBy=multi-user.target
 ```
 
-The bootstrap key is printed to the journal on first start: `journalctl -u thermal | grep -A2 Bootstrap`.
+The root user's password is printed to the journal on first start: `journalctl -u thermal | grep -A4 'Root user'`.
 
 ## Development
 
@@ -374,5 +403,5 @@ Locally, the Go workspace (`../go.work`) builds `thermal` against the `../escpos
 | `internal/render`      | Text, Markdown, Unicode and block-document renderers; image loading; the JSON Schema (layout and Unifont come from `escpos/layout` and `escpos/unifont`) |
 | `internal/queue`       | The job queue and print worker                                                            |
 | `internal/device`      | Printer connection management                                                             |
-| `internal/auth`        | API keys                                                                                  |
+| `internal/auth`        | API keys, users, passwords and sessions                                                   |
 | `internal/store`       | SQLite, migrations (`migrations/`), sqlc queries (`queries/`) and generated code (`dbq/`) |

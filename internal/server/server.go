@@ -2,9 +2,8 @@
 package server
 
 import (
-	"errors"
 	"net/http"
-	"strings"
+	"sync"
 	"time"
 
 	"github.com/connordoman/escpos/css"
@@ -24,6 +23,7 @@ var Version = "dev"
 type Server struct {
 	Store        *store.Store
 	Keys         *auth.Manager
+	Users        *auth.Users
 	Device       *device.Device
 	Queue        *queue.Queue
 	Images       *render.ImageLoader
@@ -31,6 +31,16 @@ type Server struct {
 	Debug        bool
 	// CutFeed is the paper, in dots, fed past the last line before a cut.
 	CutFeed uint8
+
+	// SessionSecure marks the session cookie Secure (HTTPS only).
+	SessionSecure bool
+	// TrustedOrigins may make cookie-authenticated requests cross-origin,
+	// e.g. a web UI served from another host.
+	TrustedOrigins []string
+
+	logins   loginThrottle
+	csrfOnce sync.Once
+	csrf     *http.CrossOriginProtection
 }
 
 // Handler returns the HTTP handler.
@@ -63,8 +73,13 @@ func (s *Server) Handler() http.Handler {
 		c.Data(http.StatusOK, "text/css; charset=utf-8", css.Stylesheet)
 	})
 
+	r.POST("/v1/session", s.createSession)
 	v1 := r.Group("/v1", s.authenticate)
 	v1.GET("/whoami", s.whoami)
+	v1.GET("/session", s.getSession)
+	v1.DELETE("/session", s.deleteSession)
+	// Users change their own password; admins anyone's.
+	v1.PUT("/users/:username/password", s.setPassword)
 
 	print := v1.Group("/print", require(auth.ScopePrint))
 	print.POST("/text", s.printText)
@@ -95,6 +110,11 @@ func (s *Server) Handler() http.Handler {
 	admin.PATCH("/keys/:id", s.updateKey)
 	admin.POST("/keys/:id/rotate", s.rotateKey)
 	admin.DELETE("/keys/:id", s.revokeKey)
+	admin.GET("/users", s.listUsers)
+	admin.POST("/users", s.createUser)
+	admin.GET("/users/:username", s.getUser)
+	admin.PATCH("/users/:username", s.updateUser)
+	admin.DELETE("/users/:username", s.disableUser)
 	admin.GET("/audit", s.listAudit)
 	return r
 }
@@ -103,7 +123,7 @@ func (s *Server) index(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"name":    "thermal",
 		"version": Version,
-		"auth":    "send an API key as 'Authorization: Bearer thm_...' or 'X-API-Key: thm_...'",
+		"auth":    "send an API key as 'Authorization: Bearer thm_...' or 'X-API-Key: thm_...', or sign in with POST /v1/session for a session cookie",
 		"schema":  "/v1/schema/job.json",
 		"css":     "/escpos.css",
 		"endpoints": []string{
@@ -114,6 +134,9 @@ func (s *Server) index(c *gin.Context) {
 			"POST /v1/jobs/:id/cancel", "POST /v1/jobs/:id/retry",
 			"GET /v1/keys", "POST /v1/keys", "GET /v1/keys/:id", "PATCH /v1/keys/:id",
 			"POST /v1/keys/:id/rotate", "DELETE /v1/keys/:id", "GET /v1/audit", "GET /v1/whoami",
+			"POST /v1/session", "GET /v1/session", "DELETE /v1/session",
+			"GET /v1/users", "POST /v1/users", "GET /v1/users/:username", "PATCH /v1/users/:username",
+			"DELETE /v1/users/:username", "PUT /v1/users/:username/password",
 		},
 	})
 }
@@ -129,12 +152,14 @@ func (s *Server) health(c *gin.Context) {
 func (s *Server) logRequests(c *gin.Context) {
 	start := time.Now()
 	c.Next()
-	key := "-"
-	if k := currentKey(c); k != nil {
-		key = k.ID
+	who := "key=-"
+	if p := currentPrincipal(c); p != nil && p.user != nil {
+		who = "user=" + p.user.Username
+	} else if p != nil {
+		who = "key=" + p.keyID
 	}
-	msg := "%s %s %d %v key=%s ip=%s"
-	args := []any{c.Request.Method, c.Request.URL.Path, c.Writer.Status(), time.Since(start).Round(time.Millisecond), key, c.ClientIP()}
+	msg := "%s %s %d %v %s ip=%s"
+	args := []any{c.Request.Method, c.Request.URL.Path, c.Writer.Status(), time.Since(start).Round(time.Millisecond), who, c.ClientIP()}
 	switch {
 	case c.Writer.Status() >= 500:
 		console.Error(msg, args...)
@@ -171,55 +196,16 @@ func abortWith(c *gin.Context, status int, code, message string, details any) {
 	c.AbortWithStatusJSON(status, e)
 }
 
-const keyContext = "thermal.key"
-
-func currentKey(c *gin.Context) *auth.Key {
-	if v, ok := c.Get(keyContext); ok {
-		return v.(*auth.Key)
-	}
-	return nil
-}
-
-func (s *Server) authenticate(c *gin.Context) {
-	token := c.GetHeader("X-API-Key")
-	if h := c.GetHeader("Authorization"); token == "" && h != "" {
-		scheme, value, _ := strings.Cut(h, " ")
-		if strings.EqualFold(scheme, "Bearer") {
-			token = strings.TrimSpace(value)
-		}
-	}
-	if token == "" {
-		c.Header("WWW-Authenticate", `Bearer realm="thermal"`)
-		abort(c, http.StatusUnauthorized, "unauthorized", "an API key is required")
-		return
-	}
-	key, err := s.Keys.Verify(c, token)
-	switch {
-	case errors.Is(err, auth.ErrInvalidKey), errors.Is(err, auth.ErrRevoked), errors.Is(err, auth.ErrExpired):
-		console.Warn("rejected API key from %s: %v", c.ClientIP(), err)
-		c.Header("WWW-Authenticate", `Bearer realm="thermal", error="invalid_token"`)
-		abort(c, http.StatusUnauthorized, "unauthorized", err.Error())
-		return
-	case err != nil:
-		console.Error("verifying API key: %v", err)
-		abort(c, http.StatusInternalServerError, "internal", "could not verify the API key")
-		return
-	}
-	c.Set(keyContext, key)
-	c.Next()
-}
-
 func require(scope auth.Scope) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if k := currentKey(c); k == nil || !k.Allows(scope) {
-			abort(c, http.StatusForbidden, "forbidden", "this API key lacks the "+string(scope)+" scope")
+		if p := currentPrincipal(c); p == nil || !p.allows(scope) {
+			who := "API key"
+			if p != nil && p.user != nil {
+				who = "user"
+			}
+			abort(c, http.StatusForbidden, "forbidden", "this "+who+" lacks the "+string(scope)+" scope")
 			return
 		}
 		c.Next()
 	}
-}
-
-func (s *Server) whoami(c *gin.Context) {
-	k := currentKey(c)
-	c.JSON(http.StatusOK, gin.H{"id": k.ID, "name": k.Name, "scopes": k.Scopes})
 }

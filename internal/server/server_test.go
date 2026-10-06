@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -18,6 +19,8 @@ import (
 	"github.com/connordoman/thermal/internal/render"
 	"github.com/connordoman/thermal/internal/store"
 )
+
+const rootPassword = "correct horse battery"
 
 type harness struct {
 	t     *testing.T
@@ -46,8 +49,12 @@ func newHarness(t *testing.T, conn string) *harness {
 	}
 	q := queue.New(db, dev, 0)
 	go q.Run(ctx)
+	users := auth.NewUsers(db.Queries, time.Hour)
+	if _, err := users.Create(ctx, "root", rootPassword, nil, true, "test"); err != nil {
+		t.Fatal(err)
+	}
 	s := &Server{
-		Store: db, Keys: keys, Device: dev, Queue: q,
+		Store: db, Keys: keys, Users: users, Device: dev, Queue: q,
 		Images:       render.NewImageLoader(false, 1<<20, time.Second),
 		MaxBodyBytes: 1 << 20,
 		CutFeed:      48,
@@ -57,10 +64,21 @@ func newHarness(t *testing.T, conn string) *harness {
 	return h
 }
 
+// do sends a request with key, which is an API key or, if it starts with
+// ths_, a session token sent as a cookie.
 func (h *harness) do(method, path, key string, body string) (int, map[string]any, []byte) {
 	h.t.Helper()
+	return h.doReq(method, path, key, body, nil)
+}
+
+func (h *harness) doReq(method, path, key string, body string, header http.Header) (int, map[string]any, []byte) {
+	h.t.Helper()
 	req, _ := http.NewRequest(method, h.srv.URL+path, strings.NewReader(body))
-	if key != "" {
+	maps.Copy(req.Header, header)
+	switch {
+	case strings.HasPrefix(key, auth.SessionPrefix):
+		req.AddCookie(&http.Cookie{Name: SessionCookie, Value: key})
+	case key != "":
 		req.Header.Set("Authorization", "Bearer "+key)
 	}
 	resp, err := http.DefaultClient.Do(req)
@@ -235,21 +253,21 @@ func TestKeyRotationAndRevocation(t *testing.T) {
 		t.Errorf("key replaced without grace still works: %d", code)
 	}
 
-	adminID, _, _ := auth.Parse(h.admin)
-	if code, _, _ := h.do("DELETE", "/v1/keys/"+adminID, h.admin, ""); code != http.StatusConflict {
-		t.Errorf("revoking the last admin: %d", code)
-	}
-	if code, _, _ := h.do("PATCH", "/v1/keys/"+adminID, h.admin, `{"scopes":["read"]}`); code != http.StatusConflict {
-		t.Errorf("demoting the last admin: %d", code)
-	}
+	// The root user makes it impossible to lock yourself out, so even the
+	// last admin key can be revoked.
 	second := h.newKey("admin")
+	adminID, _, _ := auth.Parse(h.admin)
 	if code, _, _ := h.do("DELETE", "/v1/keys/"+adminID, second, ""); code != http.StatusOK {
-		t.Errorf("revoking an admin with another left: %d", code)
+		t.Errorf("revoking an admin key: %d", code)
+	}
+	secondID, _, _ := auth.Parse(second)
+	if code, _, _ := h.do("DELETE", "/v1/keys/"+secondID, second, ""); code != http.StatusOK {
+		t.Errorf("revoking the last admin key: %d", code)
 	}
 	if code, _, _ := h.do("GET", "/v1/whoami", h.admin, ""); code != http.StatusUnauthorized {
 		t.Errorf("revoked key still works: %d", code)
 	}
-	code, m, _ = h.do("PATCH", "/v1/keys/"+id, second, `{"name":"renamed","expires_in":"24h"}`)
+	code, m, _ = h.do("PATCH", "/v1/keys/"+id, h.signIn("root", rootPassword), `{"name":"renamed","expires_in":"24h"}`)
 	if code != http.StatusOK || field(m, "key", "name") != "renamed" || field(m, "key", "expires_at") == nil {
 		t.Errorf("update: %d %v", code, m)
 	}
