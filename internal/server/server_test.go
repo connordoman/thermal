@@ -25,6 +25,7 @@ const rootPassword = "correct horse battery"
 type harness struct {
 	t     *testing.T
 	srv   *httptest.Server
+	s     *Server
 	admin string
 }
 
@@ -59,7 +60,7 @@ func newHarness(t *testing.T, conn string) *harness {
 		MaxBodyBytes: 1 << 20,
 		CutFeed:      48,
 	}
-	h := &harness{t: t, srv: httptest.NewServer(s.Handler()), admin: admin}
+	h := &harness{t: t, srv: httptest.NewServer(s.Handler()), s: s, admin: admin}
 	t.Cleanup(h.srv.Close)
 	return h
 }
@@ -174,6 +175,40 @@ func TestPrintRoutes(t *testing.T) {
 	code, m, _ = h.do("POST", "/v1/print/json", key, `{"blocks":[{"type":"barcode","symbology":"EAN13","content":"1"}]}`)
 	if code != http.StatusUnprocessableEntity || field(m, "error", "code") != "invalid_block" {
 		t.Errorf("bad barcode: %d %v", code, m)
+	}
+}
+
+func TestUpsideDown(t *testing.T) {
+	h := newHarness(t, "discard")
+	key := h.newKey("print", "read")
+	isPaged := func(raw []byte) bool { return bytes.Contains(raw, []byte("\x1bL\x1bT\x02")) }
+	for _, tc := range []struct {
+		serverDefault bool
+		query         string
+		want          bool
+	}{
+		{false, "", false},
+		{false, "&upside_down", true},
+		{true, "", true},
+		{true, "&upside_down=false", false},
+	} {
+		h.s.UpsideDown = tc.serverDefault
+		code, _, raw := h.do("POST", "/v1/print/text?dry_run=true"+tc.query, key, "hello")
+		if code != http.StatusOK || isPaged(raw) != tc.want {
+			t.Errorf("default %v, query %q: got %d %q", tc.serverDefault, tc.query, code, raw)
+		}
+	}
+	// Raw jobs are never turned, and say so when asked.
+	h.s.UpsideDown = true
+	if code, _, raw := h.do("POST", "/v1/print/raw?dry_run=true", h.admin, "hi\n"); code != http.StatusOK || isPaged(raw) {
+		t.Errorf("raw with server default: %d %q", code, raw)
+	}
+	if code, m, _ := h.do("POST", "/v1/print/raw?dry_run=true&upside_down", h.admin, "hi\n"); code != http.StatusBadRequest || field(m, "error", "code") != "invalid_parameter" {
+		t.Errorf("raw upside_down: %d %v", code, m)
+	}
+	code, m, _ := h.do("POST", "/v1/print/json?dry_run=true", key, `[{"type":"page","blocks":[{"type":"text","content":"x"}]}]`)
+	if code != http.StatusUnprocessableEntity || field(m, "error", "code") != "upside_down_unsupported" {
+		t.Errorf("page block upside down: %d %v", code, m)
 	}
 }
 

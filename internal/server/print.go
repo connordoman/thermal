@@ -37,6 +37,9 @@ type jobOptions struct {
 	label    string
 	wait     time.Duration
 	dryRun   bool
+	// upsideDown is the request's upside_down, or nil for the server's
+	// default.
+	upsideDown *bool
 }
 
 // queryError is a bad query parameter.
@@ -144,6 +147,10 @@ func (q *query) jobOptions(defaultFeed uint8) jobOptions {
 		q.fail("label", "must be at most 200 characters")
 	}
 	o.dryRun = q.bool("dry_run", false)
+	if q.has("upside_down") {
+		v := q.bool("upside_down", false)
+		o.upsideDown = &v
+	}
 	switch w := q.str("wait", ""); w {
 	case "", "false", "0":
 	case "true":
@@ -193,6 +200,8 @@ func renderError(c *gin.Context, err error) {
 		abortWith(c, http.StatusUnprocessableEntity, "invalid_block", be.Error(), gin.H{"path": be.Path})
 	case errors.As(err, &qe):
 		abortWith(c, http.StatusBadRequest, "invalid_parameter", qe.Error(), gin.H{"parameter": qe.param})
+	case errors.Is(err, render.ErrUpsideDown):
+		abort(c, http.StatusUnprocessableEntity, "upside_down_unsupported", err.Error())
 	case errors.Is(err, escpos.ErrInvalidArgument):
 		abort(c, http.StatusUnprocessableEntity, "invalid_argument", err.Error())
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
@@ -211,9 +220,14 @@ func blockPath(err error) any {
 	return nil
 }
 
-func (s *Server) env() *render.Env {
+func (s *Server) env(o jobOptions) *render.Env {
 	env := render.NewEnv(s.Device.PaperWidth(), s.Images)
 	env.CutFeed = s.CutFeed
+	env.UpsideDown = s.UpsideDown
+	if o.upsideDown != nil {
+		env.UpsideDown = *o.upsideDown
+	}
+	env.PageHeight = s.PageHeight
 	return env
 }
 
@@ -296,6 +310,9 @@ func truncate(s string, n int) string {
 func (s *Server) printRaw(c *gin.Context) {
 	q := &query{c: c}
 	o := q.jobOptions(s.CutFeed)
+	if o.upsideDown != nil && *o.upsideDown {
+		q.fail("upside_down", "raw jobs cannot be printed upside down")
+	}
 	if q.err != nil {
 		renderError(c, q.err)
 		return
@@ -369,7 +386,7 @@ func (s *Server) printText(c *gin.Context) {
 	if !ok {
 		return
 	}
-	payload, err := render.RenderText(s.env(), string(body), to, o.finish)
+	payload, err := render.RenderText(s.env(o), string(body), to, o.finish)
 	if err != nil {
 		renderError(c, err)
 		return
@@ -405,7 +422,7 @@ func (s *Server) printMarkdown(c *gin.Context) {
 	}
 	ctx, cancel := context.WithTimeout(c, renderTimeout)
 	defer cancel()
-	payload, err := render.RenderMarkdown(ctx, s.env(), string(body), mo, o.finish)
+	payload, err := render.RenderMarkdown(ctx, s.env(o), string(body), mo, o.finish)
 	if err != nil {
 		renderError(c, err)
 		return
@@ -456,7 +473,7 @@ func (s *Server) printUnicode(c *gin.Context) {
 		c.Data(http.StatusOK, "image/png", buf.Bytes())
 		return
 	}
-	payload, err := render.RenderUnicodeText(s.env(), string(body), uo, o.finish)
+	payload, err := render.RenderUnicodeText(s.env(o), string(body), uo, o.finish)
 	if err != nil {
 		renderError(c, err)
 		return
@@ -498,7 +515,7 @@ func (s *Server) printJSON(c *gin.Context) {
 	}
 	ctx, cancel := context.WithTimeout(c, renderTimeout)
 	defer cancel()
-	payload, err := render.RenderDocument(ctx, s.env(), doc)
+	payload, err := render.RenderDocument(ctx, s.env(o), doc)
 	if err != nil {
 		renderError(c, err)
 		return

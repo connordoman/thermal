@@ -21,6 +21,10 @@ type Env struct {
 	// CutFeed is the paper, in dots, fed past the last line before a cut
 	// that does not give its own feed.
 	CutFeed uint8
+	// UpsideDown prints the job turned 180°, in pages up to PageHeight
+	// dots tall (see [UpsideDown]).
+	UpsideDown bool
+	PageHeight int
 
 	images atomic.Int32
 }
@@ -99,6 +103,22 @@ func (f Finish) Apply(b *escpos.Builder) {
 	}
 }
 
+// finish ends a job with f, after turning its content upside down if the
+// environment asks for it.
+func (e *Env) finish(b *escpos.Builder, f Finish) ([]byte, error) {
+	if !e.UpsideDown {
+		f.Apply(b)
+		return b.Bytes(), nil
+	}
+	body, err := UpsideDown(b.Bytes(), e.PaperWidth, e.PageHeight)
+	if err != nil {
+		return nil, err
+	}
+	b.Reset()
+	f.Apply(b)
+	return append(body, b.Bytes()...), nil
+}
+
 // TextOptions controls plain-text jobs.
 type TextOptions struct {
 	Style layout.Style
@@ -119,8 +139,7 @@ func RenderText(env *Env, text string, o TextOptions, f Finish) ([]byte, error) 
 	} else {
 		w.Text(s, o.Style)
 	}
-	f.Apply(b)
-	return b.Bytes(), nil
+	return env.finish(b, f)
 }
 
 // RenderUnicodeText draws text as an image so every character prints.
@@ -129,8 +148,7 @@ func RenderUnicodeText(env *Env, text string, o unifont.Options, f Finish) ([]by
 	if err := unifont.Print(b, strings.TrimRight(text, "\n"), o); err != nil {
 		return nil, err
 	}
-	f.Apply(b)
-	return b.Bytes(), nil
+	return env.finish(b, f)
 }
 
 // RenderMarkdown prints GitHub-flavoured Markdown.
@@ -139,6 +157,5 @@ func RenderMarkdown(ctx context.Context, env *Env, src string, o MarkdownOptions
 	if err := WriteMarkdown(ctx, env, w, src, o); err != nil {
 		return nil, err
 	}
-	f.Apply(b)
-	return b.Bytes(), nil
+	return env.finish(b, f)
 }
