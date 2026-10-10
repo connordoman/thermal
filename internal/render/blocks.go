@@ -179,8 +179,7 @@ func RenderDocument(ctx context.Context, env *Env, doc *Document) ([]byte, error
 	if r.lastCut {
 		f.Cut, f.Feed = CutNone, 0
 	}
-	f.Apply(b)
-	return b.Bytes(), nil
+	return env.finish(b, f)
 }
 
 func (r *docRenderer) blocks(raw []json.RawMessage, sc scope, path string, depth int) error {

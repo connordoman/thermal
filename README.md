@@ -66,6 +66,8 @@ Settings come from the environment, or a `.env` file in the working directory.
 | `THERMAL_ROOT_PASSWORD` | | The root user's initial password (8 or more characters). Random and printed once if unset. Only used when the root user is created; change it later through the API |
 | `THERMAL_ROOT_PASSWORD_FILE` | | Read the initial password from a file instead, such as a Docker secret |
 | `THERMAL_CUT_FEED` | `96` | Dots of paper (8 per mm, so 12 mm by default) fed past the last line before each cut. The cutter sits about 2 cm above the print head, so jobs also start with that much blank paper; the printer cannot feed backwards to save it |
+| `THERMAL_UPSIDE_DOWN` | `false` | Print jobs upside down unless a request sets `upside_down` (see [Upside down](#upside-down)) |
+| `THERMAL_UPSIDE_DOWN_PAGE_HEIGHT` | `1024` | Tallest page, in dots, an upside-down job prints at once. Lower it if long jobs print clipped |
 
 `ESCPOS_CONNECTION` is an [`escpos.Open`](https://github.com/connordoman/escpos#connection-strings-and-reconnecting) connection string:
 
@@ -152,8 +154,20 @@ Every print endpoint takes the body as-is (no form encoding) and these query par
 | `open_drawer`, `beep` | `false`   | Kick the cash drawer or beep after printing                                         |
 | `wait`                |           | Wait up to this long (e.g. `30s`, max `5m`) for the job to finish before responding |
 | `dry_run`             | `false`   | Return the rendered ESC/POS bytes instead of queueing them                          |
+| `upside_down` | from `THERMAL_UPSIDE_DOWN` | Print the job turned 180° (not for `/raw`; see [Upside down](#upside-down)) |
 
 A submission returns `202 Accepted` with the job and its queue position, or `200 OK` if `wait` saw it finish (check `job.status`, which may be `failed`). Bad input returns `400` or `422` with an error code, a message and, for documents, the path of each problem.
+
+### Upside down
+
+With `upside_down`, a job reads correctly when the receipt is turned around, for printers mounted upside down or receipts read from the other side of a counter. The rendered job is split into pages of at most `THERMAL_UPSIDE_DOWN_PAGE_HEIGHT` dots, at line, image and bar code boundaries, and the pages print last first in page mode with direction `ESC T 2`. Cuts stay where they are, and each part between them is turned on its own.
+
+Page mode limits the layout:
+
+- Text is left-aligned at full width: the printer ignores justification (`ESC a`), margins (`GS L`, `GS W`) and the 90° and upside-down character modes in page mode. Images, including Unicode text and Markdown images, are padded to the paper width, so they keep their alignment.
+- Page heights are estimated from the commands (line spacing, character size, image rows, QR code versions assuming byte mode, bar code height). A short estimate clips a page and a long one leaves a gap. PDF417 heights are rough.
+- Documents with `page` blocks, and `raw` blocks the server does not recognise, return `422 upside_down_unsupported`. Raw jobs are never turned.
+- The printer's largest page-mode area is undocumented; if long jobs come out clipped, lower `THERMAL_UPSIDE_DOWN_PAGE_HEIGHT`.
 
 ### `POST /v1/print/text`
 
