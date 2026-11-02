@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/connordoman/thermal/internal/auth"
-	"github.com/connordoman/thermal/internal/render"
 )
 
 const (
@@ -32,14 +31,9 @@ const (
 	EnvRootPasswordFile = "THERMAL_ROOT_PASSWORD_FILE" // read the initial password from this file instead (e.g. a Docker secret)
 )
 
-const (
-	// EnvUpsideDown prints jobs upside down unless a request says
-	// otherwise. Default false.
-	EnvUpsideDown = "THERMAL_UPSIDE_DOWN"
-	// EnvUpsideDownPage is the tallest page, in dots, an upside-down job
-	// prints at once. Default 1024.
-	EnvUpsideDownPage = "THERMAL_UPSIDE_DOWN_PAGE_HEIGHT"
-)
+// EnvUpsideDown prints jobs upside down unless a request says otherwise.
+// Default false.
+const EnvUpsideDown = "THERMAL_UPSIDE_DOWN"
 
 type ServerConfig struct {
 	Addr         string
@@ -50,10 +44,8 @@ type ServerConfig struct {
 	// CutFeed is the paper, in dots, fed past the last line before a cut,
 	// unless a request sets its own.
 	CutFeed uint8
-	// UpsideDown is the default for print requests' upside_down, and
-	// UpsideDownPageHeight the tallest page mode area those jobs use.
-	UpsideDown           bool
-	UpsideDownPageHeight int
+	// UpsideDown is the default for print requests' upside_down.
+	UpsideDown bool
 
 	// Images fetched by URL for markdown and JSON jobs.
 	ImageAllowPrivateHosts bool
@@ -97,9 +89,6 @@ func (s *ServerConfig) Load() error {
 	s.CutFeed = uint8(min(max(feed, 0), 255))
 	s.UpsideDown, err = envBool(EnvUpsideDown, false)
 	add(err)
-	page, err := envInt(EnvUpsideDownPage, render.DefaultPageHeight)
-	add(err)
-	s.UpsideDownPageHeight = int(page)
 	s.ImageAllowPrivateHosts, err = envBool(EnvImageAllowLocal, false)
 	add(err)
 	s.ImageMaxBytes, err = envInt(EnvImageMaxBytes, 10<<20)
@@ -155,9 +144,6 @@ func (s *ServerConfig) Validate() error {
 		if u, err := url.Parse(o); err != nil || u.Scheme == "" || u.Host == "" || u.Path != "" {
 			errs = append(errs, configError(EnvTrustedOrigins, fmt.Sprintf("%q is not an origin such as https://thermal.example.com", o)))
 		}
-	}
-	if s.UpsideDownPageHeight < 64 || s.UpsideDownPageHeight > 65535 {
-		errs = append(errs, configError(EnvUpsideDownPage, "must be 64–65535 dots"))
 	}
 	if s.Retention < 0 {
 		errs = append(errs, configError(EnvThermalRetain, "must not be negative"))

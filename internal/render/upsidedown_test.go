@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/color"
 	"os"
 	"slices"
 	"strings"
@@ -15,98 +16,120 @@ import (
 	"github.com/connordoman/escpos/escpostest"
 )
 
-func upsideDownEnv(pageHeight int) *Env {
+func upsideDownEnv() *Env {
 	env := NewEnv(576, NewImageLoader(false, 1<<20, time.Second))
 	env.Now = func() time.Time { return time.Date(2026, 10, 3, 9, 30, 0, 0, time.UTC) }
 	env.UpsideDown = true
-	env.PageHeight = pageHeight
 	return env
 }
 
-// pages returns the commands of each page-mode page in out.
-func pages(out []byte) [][]escpostest.Token {
-	var all [][]escpostest.Token
-	var cur []escpostest.Token
-	in := false
-	for _, t := range escpostest.Decode(out) {
-		switch {
-		case t.Cmd == "ESC L":
-			in, cur = true, nil
-		case t.Cmd == "FF" && in:
-			all = append(all, cur)
-			in = false
-		case in:
-			cur = append(cur, t)
-		}
-	}
-	return all
-}
+var boldStyle = func() (s TextOptions) { s.Style.Bold = true; return }().Style
 
 func TestUpsideDownText(t *testing.T) {
 	var lines []string
-	for i := range 10 {
+	for i := range 4 {
 		lines = append(lines, fmt.Sprintf("line %d", i))
 	}
-	// 30-dot lines, so 4 fit a 120-dot page.
-	out, err := RenderText(upsideDownEnv(120), strings.Join(lines, "\n"), TextOptions{Style: boldStyle}, Finish{Cut: CutPartial, Feed: 10})
+	out, err := RenderText(upsideDownEnv(), strings.Join(lines, "\n"), TextOptions{Style: boldStyle}, Finish{Cut: CutPartial, Feed: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if os.Getenv("SHOW") != "" {
 		t.Log("\n" + escpostest.Describe(out))
 	}
-	ps := pages(out)
-	if len(ps) != 3 {
-		t.Fatalf("got %d pages, want 3", len(ps))
-	}
-	// The last lines print first.
-	got := escpostest.Lines(out)
-	want := []string{"line 8", "line 9", "line 4", "line 5", "line 6", "line 7", "line 0", "line 1", "line 2", "line 3"}
-	if !slices.Equal(got, want) {
+	// The last line prints first, in standard mode.
+	if got, want := escpostest.Lines(out), []string{"line 3", "line 2", "line 1", "line 0"}; !slices.Equal(got, want) {
 		t.Errorf("lines = %q, want %q", got, want)
 	}
-	for i, p := range ps {
-		if p[0].Cmd != "ESC T" || p[0].Args[0] != 2 {
-			t.Errorf("page %d starts with %v, want ESC T 2", i, p[0])
-		}
-		if p[1].Cmd != "ESC W" {
-			t.Fatalf("page %d: second command is %v, want ESC W", i, p[1])
-		}
-		// Every page restores the style, even though it is only set once.
-		if !slices.ContainsFunc(p, func(t escpostest.Token) bool { return t.Cmd == "ESC E" && t.Args[0] == 1 }) {
-			t.Errorf("page %d does not turn bold on", i)
+	for _, c := range []string{"ESC L", "ESC T", "ESC W", "FF"} {
+		if n := len(escpostest.Commands(out, c)); n != 0 {
+			t.Errorf("%d × %s: upside-down jobs stay in standard mode", n, c)
 		}
 	}
-	if h := escpostest.Commands(out, "ESC W")[0].Args; h[len(h)-2] != 60 {
-		t.Errorf("first page area %v, want 60 dots tall", h)
+	// The printer turns the lines, and once is enough. Bold is restored once.
+	if n := len(escpostest.Commands(out, "ESC {")); n != 2 {
+		t.Errorf("%d × ESC {, want on and off", n)
 	}
-	// The finish follows the pages.
-	cuts := escpostest.Commands(out, "GS V")
-	if len(cuts) != 1 || !strings.HasSuffix(escpostest.Describe(out), "<GS V 66 10>") {
-		t.Errorf("job does not end with the cut: %v", cuts)
+	if n := len(escpostest.Commands(out, "ESC E")); n != 1 {
+		t.Errorf("%d × ESC E, want 1", n)
+	}
+	if !strings.HasSuffix(escpostest.Describe(out), "<GS V 66 10>") {
+		t.Errorf("job does not end with the cut:\n%s", escpostest.Describe(out))
 	}
 }
 
-var boldStyle = func() (s TextOptions) { s.Style.Bold = true; return }().Style
-
-func TestUpsideDownImageBands(t *testing.T) {
+func TestUpsideDownStateFollowsEachLine(t *testing.T) {
 	b := escpos.NewBuilder(576)
-	img := image.NewGray(image.Rect(0, 0, 576, 250))
-	if err := b.PrintImage(img, escpos.ImageOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	out, err := UpsideDown(b.Bytes(), 576, 100)
+	b.Initialize()
+	b.Textln("plain")
+	b.SetEmphasis(true)
+	b.Textln("bold")
+	out, err := UpsideDown(b.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
-	var rows []int
-	for _, c := range escpostest.Commands(out, "GS v 0") {
-		rows = append(rows, c.Args[2])
+	// Reversed, "bold" prints first, and "plain" must not inherit its style.
+	d := escpostest.Describe(out)
+	i, j := strings.Index(d, "bold"), strings.Index(d, "plain")
+	if i < 0 || j < i || !strings.Contains(d[i:j], "<ESC @>") {
+		t.Errorf("plain is not reset after bold:\n%s", d)
 	}
-	// Bands print last first.
-	if !slices.Equal(rows, []int{50, 100, 100}) {
-		t.Errorf("bands = %v, want [50 100 100]", rows)
+}
+
+func TestUpsideDownFeeds(t *testing.T) {
+	b := escpos.NewBuilder(576)
+	b.Textln("a")
+	b.FeedUnits(40)
+	b.Textln("b")
+	out, err := UpsideDown(b.Bytes())
+	if err != nil {
+		t.Fatal(err)
 	}
+	// The gap stays between the lines.
+	d := escpostest.Describe(out)
+	if i, j, k := strings.Index(d, "b"), strings.Index(d, "<ESC J 40>"), strings.LastIndex(d, "a"); !(0 <= i && i < j && j < k) {
+		t.Errorf("gap moved:\n%s", d)
+	}
+}
+
+func TestUpsideDownImageIsTurned(t *testing.T) {
+	b := escpos.NewBuilder(576)
+	img := image.NewGray(image.Rect(0, 0, 16, 2))
+	for x := range 16 { // top row black on the left, bottom row on the right
+		img.SetGray(x, 0, grayOf(x < 8))
+		img.SetGray(x, 1, grayOf(x >= 8))
+	}
+	if err := b.PrintImage(img, escpos.ImageOptions{Threshold: 128}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := UpsideDown(b.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raster []byte
+	for i := range out {
+		if i+8 < len(out) && out[i] == 0x1D && out[i+1] == 'v' {
+			raster = out[i+8 : i+12]
+		}
+	}
+	// Rows swap and each is mirrored: the left half black, then the right.
+	if want := []byte{0xFF, 0x00, 0x00, 0xFF}; !slices.Equal(raster, want) {
+		t.Errorf("raster = %x, want %x", raster, want)
+	}
+	// The printer does not turn it, so left-aligned becomes right-aligned.
+	if a := escpostest.Commands(out, "ESC a"); len(a) != 1 || a[0].Args[0] != 2 {
+		t.Errorf("alignment = %v, want right", a)
+	}
+	if len(escpostest.Commands(out, "ESC {")) != 0 {
+		t.Error("an image alone needs no ESC {")
+	}
+}
+
+func grayOf(black bool) color.Gray {
+	if black {
+		return color.Gray{}
+	}
+	return color.Gray{Y: 255}
 }
 
 func TestUpsideDownKeepsCuts(t *testing.T) {
@@ -115,7 +138,7 @@ func TestUpsideDownKeepsCuts(t *testing.T) {
 	b.Textln("first")
 	b.FeedAndCut(0)
 	b.Textln("second")
-	out, err := UpsideDown(b.Bytes(), 576, 1000)
+	out, err := UpsideDown(b.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,39 +146,56 @@ func TestUpsideDownKeepsCuts(t *testing.T) {
 	if i, j, k := strings.Index(d, "first"), strings.Index(d, "<GS V"), strings.Index(d, "second"); i < 0 || !(i < j && j < k) {
 		t.Errorf("cut moved:\n%s", d)
 	}
-	if n := len(pages(out)); n != 2 {
-		t.Errorf("got %d pages, want 2", n)
-	}
 }
 
-func TestUpsideDownQRCodeStaysWhole(t *testing.T) {
+func TestUpsideDownSymbols(t *testing.T) {
 	b := escpos.NewBuilder(576)
 	b.Textln("above")
 	if err := b.PrintQRCode("https://example.com", escpos.QRErrorM, 4); err != nil {
 		t.Fatal(err)
 	}
-	// One line per page, so the QR code's commands would be split if they
-	// could be.
-	out, err := UpsideDown(b.Bytes(), 576, 30)
+	b.Textln("below")
+	out, err := UpsideDown(b.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
-	ps := pages(out)
-	if len(ps) != 2 {
-		t.Fatalf("got %d pages, want 2", len(ps))
-	}
+	// The QR code stays whole between the lines, now in reverse.
 	var fns []int
-	for _, c := range ps[0] {
-		if c.Cmd == "GS ( k" {
-			fns = append(fns, c.Args[1])
-		}
+	for _, c := range escpostest.Commands(out, "GS ( k") {
+		fns = append(fns, c.Args[1])
 	}
 	if !slices.Equal(fns, []int{65, 67, 69, 80, 81}) {
-		t.Errorf("first page QR functions = %v, want all of them", fns)
+		t.Errorf("QR functions = %v, want all of them once", fns)
 	}
-	// Version 2 at 4 dots a module.
-	if h := escpostest.Commands(out, "ESC W")[0].Args; h[len(h)-2]|h[len(h)-1]<<8 != 25*4 {
-		t.Errorf("QR page area %v, want 100 dots tall", h)
+	if got := escpostest.Lines(out); !slices.Equal(got, []string{"below", "above"}) {
+		t.Errorf("lines = %q", got)
+	}
+}
+
+func TestUpsideDownDropsWhatItCannotTurn(t *testing.T) {
+	b := escpos.NewBuilder(576)
+	b.SetLeftMargin(100)
+	b.SetPrintAreaWidth(300)
+	b.SetRotate90(true)
+	b.Textln("x")
+	out, err := UpsideDown(b.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []string{"GS L", "GS W", "ESC V"} {
+		if n := len(escpostest.Commands(out, c)); n != 0 {
+			t.Errorf("%d × %s survived", n, c)
+		}
+	}
+}
+
+func TestUpsideDownRefusesPageMode(t *testing.T) {
+	b := escpos.NewBuilder(576)
+	b.EnterPageMode()
+	b.Textln("x")
+	b.PrintPageAndExit()
+	if _, err := UpsideDown(b.Bytes()); !errors.Is(err, ErrUpsideDown) {
+		t.Errorf("err = %v, want ErrUpsideDown", err)
 	}
 }
 
@@ -170,15 +210,16 @@ func TestUpsideDownExamples(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			// The scanner agrees with escpostest on every command.
-			plain, err := RenderDocument(context.Background(), upsideDownEnv(0), &Document{Blocks: doc.Blocks, Options: doc.Options})
+			out, err := RenderDocument(context.Background(), upsideDownEnv(), doc)
 			if name == "everything.json" {
+				// It has a page block.
 				if !errors.Is(err, ErrUpsideDown) {
-					t.Fatalf("err = %v, want ErrUpsideDown (it has a page block)", err)
+					t.Fatalf("err = %v, want ErrUpsideDown", err)
 				}
-				env := upsideDownEnv(0)
+				env := upsideDownEnv()
 				env.UpsideDown = false
-				if plain, err = RenderDocument(context.Background(), env, doc); err != nil {
+				plain, err := RenderDocument(context.Background(), env, doc)
+				if err != nil {
 					t.Fatal(err)
 				}
 				checkScanner(t, plain)
@@ -187,13 +228,13 @@ func TestUpsideDownExamples(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(pages(plain)) == 0 && len(doc.Blocks) > 0 {
-				t.Error("no pages")
-			}
 			if os.Getenv("SHOW") != "" {
-				t.Log("\n" + escpostest.Describe(plain))
+				t.Log("\n" + escpostest.Describe(out))
 			}
-			checkScanner(t, plain)
+			if len(doc.Blocks) > 0 && len(escpostest.Commands(out, "ESC {")) == 0 {
+				t.Error("nothing was turned")
+			}
+			checkScanner(t, out)
 		})
 	}
 }
@@ -223,5 +264,28 @@ func checkScanner(t *testing.T, b []byte) {
 	}
 	if got != len(want) {
 		t.Errorf("cmdLen found %d commands, escpostest %d", got, len(want))
+	}
+}
+
+func TestUpsideDownIgnoresMargins(t *testing.T) {
+	doc, err := ParseDocument([]byte(`{"version":1,"blocks":[
+		{"type":"margins","left":100,"width":300},
+		{"type":"text","content":"x","style":{"marginLeft":50,"width":200}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := RenderDocument(context.Background(), upsideDownEnv(), doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []string{"GS L", "GS W"} {
+		if n := len(escpostest.Commands(out, c)); n != 0 {
+			t.Errorf("%d × %s", n, c)
+		}
+	}
+	env := upsideDownEnv()
+	env.UpsideDown = false
+	if out, err = RenderDocument(context.Background(), env, doc); err != nil || len(escpostest.Commands(out, "GS L")) == 0 {
+		t.Errorf("upright jobs keep their margins: %v", err)
 	}
 }

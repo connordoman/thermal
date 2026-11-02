@@ -181,7 +181,7 @@ func TestPrintRoutes(t *testing.T) {
 func TestUpsideDown(t *testing.T) {
 	h := newHarness(t, "discard")
 	key := h.newKey("print", "read")
-	isPaged := func(raw []byte) bool { return bytes.Contains(raw, []byte("\x1bL\x1bT\x02")) }
+	isTurned := func(raw []byte) bool { return bytes.Contains(raw, []byte("\x1b{\x01")) }
 	for _, tc := range []struct {
 		serverDefault bool
 		query         string
@@ -194,13 +194,13 @@ func TestUpsideDown(t *testing.T) {
 	} {
 		h.s.UpsideDown = tc.serverDefault
 		code, _, raw := h.do("POST", "/v1/print/text?dry_run=true"+tc.query, key, "hello")
-		if code != http.StatusOK || isPaged(raw) != tc.want {
+		if code != http.StatusOK || isTurned(raw) != tc.want {
 			t.Errorf("default %v, query %q: got %d %q", tc.serverDefault, tc.query, code, raw)
 		}
 	}
 	// Raw jobs are never turned, and say so when asked.
 	h.s.UpsideDown = true
-	if code, _, raw := h.do("POST", "/v1/print/raw?dry_run=true", h.admin, "hi\n"); code != http.StatusOK || isPaged(raw) {
+	if code, _, raw := h.do("POST", "/v1/print/raw?dry_run=true", h.admin, "hi\n"); code != http.StatusOK || isTurned(raw) {
 		t.Errorf("raw with server default: %d %q", code, raw)
 	}
 	if code, m, _ := h.do("POST", "/v1/print/raw?dry_run=true&upside_down", h.admin, "hi\n"); code != http.StatusBadRequest || field(m, "error", "code") != "invalid_parameter" {

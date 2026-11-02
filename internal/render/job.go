@@ -21,10 +21,8 @@ type Env struct {
 	// CutFeed is the paper, in dots, fed past the last line before a cut
 	// that does not give its own feed.
 	CutFeed uint8
-	// UpsideDown prints the job turned 180°, in pages up to PageHeight
-	// dots tall (see [UpsideDown]).
+	// UpsideDown prints the job turned 180° (see [UpsideDown]).
 	UpsideDown bool
-	PageHeight int
 
 	images atomic.Int32
 }
@@ -110,7 +108,7 @@ func (e *Env) finish(b *escpos.Builder, f Finish) ([]byte, error) {
 		f.Apply(b)
 		return b.Bytes(), nil
 	}
-	body, err := UpsideDown(b.Bytes(), e.PaperWidth, e.PageHeight)
+	body, err := UpsideDown(b.Bytes())
 	if err != nil {
 		return nil, err
 	}

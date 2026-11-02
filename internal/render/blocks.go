@@ -149,7 +149,12 @@ func (r *docRenderer) areaWidth() int {
 	return r.env.PaperWidth - r.marginLeft
 }
 
+// setMargins sets the left margin and printable width, which upside-down
+// printing cannot honour: everything keeps the full width.
 func (r *docRenderer) setMargins(left, width int) {
+	if r.env.UpsideDown {
+		return
+	}
 	r.b.SetLeftMargin(uint16(left))
 	r.b.SetPrintAreaWidth(uint16(width))
 	r.marginLeft, r.width = left, width

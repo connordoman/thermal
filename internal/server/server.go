@@ -31,10 +31,8 @@ type Server struct {
 	Debug        bool
 	// CutFeed is the paper, in dots, fed past the last line before a cut.
 	CutFeed uint8
-	// UpsideDown is the default for print requests' upside_down, and
-	// PageHeight the tallest page, in dots, upside-down jobs print at once.
+	// UpsideDown is the default for print requests' upside_down.
 	UpsideDown bool
-	PageHeight int
 
 	// SessionSecure marks the session cookie Secure (HTTPS only).
 	SessionSecure bool

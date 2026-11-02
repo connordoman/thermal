@@ -130,7 +130,6 @@ func main() {
 		Debug:        cfg.Server.Debug,
 		CutFeed:      cfg.Server.CutFeed,
 		UpsideDown:   cfg.Server.UpsideDown,
-		PageHeight:   cfg.Server.UpsideDownPageHeight,
 
 		SessionSecure:  cfg.Server.SessionSecure,
 		TrustedOrigins: cfg.Server.TrustedOrigins,

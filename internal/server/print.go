@@ -227,7 +227,6 @@ func (s *Server) env(o jobOptions) *render.Env {
 	if o.upsideDown != nil {
 		env.UpsideDown = *o.upsideDown
 	}
-	env.PageHeight = s.PageHeight
 	return env
 }
 
