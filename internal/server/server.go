@@ -31,6 +31,8 @@ type Server struct {
 	Debug        bool
 	// CutFeed is the paper, in dots, fed past the last line before a cut.
 	CutFeed uint8
+	// UpsideDown is the default for print requests' upside_down.
+	UpsideDown bool
 
 	// SessionSecure marks the session cookie Secure (HTTPS only).
 	SessionSecure bool

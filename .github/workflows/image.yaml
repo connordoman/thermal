@@ -3,6 +3,7 @@
 #
 #   push to main   ->  :edge, :sha-abc1234
 #   tag v1.2.3     ->  :latest, :1.2.3, :1.2
+#   manual run on a branch  ->  :branch-feat-x, :sha-abc1234 (just pi-branch)
 #
 # A Pi set up with deploy/install.sh pulls its channel (latest or edge)
 # every few minutes, so publishing an image is the whole deployment.
@@ -64,6 +65,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
             type=edge,branch=main
+            type=ref,event=branch,prefix=branch-,enable=${{ github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main' }}
             type=sha
       # Go cross-compiles in the build stage, so no QEMU is needed.
       - uses: docker/build-push-action@v6

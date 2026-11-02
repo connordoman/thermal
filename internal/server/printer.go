@@ -74,6 +74,7 @@ func (s *Server) printerInfo(c *gin.Context) {
 	}
 	resp["device"] = s.Device.Info()
 	resp["worker"] = s.Queue.State()
+	resp["defaults"] = gin.H{"upside_down": s.UpsideDown}
 	c.JSON(http.StatusOK, resp)
 }
 

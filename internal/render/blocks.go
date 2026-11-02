@@ -149,7 +149,12 @@ func (r *docRenderer) areaWidth() int {
 	return r.env.PaperWidth - r.marginLeft
 }
 
+// setMargins sets the left margin and printable width, which upside-down
+// printing cannot honour: everything keeps the full width.
 func (r *docRenderer) setMargins(left, width int) {
+	if r.env.UpsideDown {
+		return
+	}
 	r.b.SetLeftMargin(uint16(left))
 	r.b.SetPrintAreaWidth(uint16(width))
 	r.marginLeft, r.width = left, width
@@ -179,8 +184,7 @@ func RenderDocument(ctx context.Context, env *Env, doc *Document) ([]byte, error
 	if r.lastCut {
 		f.Cut, f.Feed = CutNone, 0
 	}
-	f.Apply(b)
-	return b.Bytes(), nil
+	return env.finish(b, f)
 }
 
 func (r *docRenderer) blocks(raw []json.RawMessage, sc scope, path string, depth int) error {

@@ -66,6 +66,7 @@ Settings come from the environment, or a `.env` file in the working directory.
 | `THERMAL_ROOT_PASSWORD` | | The root user's initial password (8 or more characters). Random and printed once if unset. Only used when the root user is created; change it later through the API |
 | `THERMAL_ROOT_PASSWORD_FILE` | | Read the initial password from a file instead, such as a Docker secret |
 | `THERMAL_CUT_FEED` | `96` | Dots of paper (8 per mm, so 12 mm by default) fed past the last line before each cut. The cutter sits about 2 cm above the print head, so jobs also start with that much blank paper; the printer cannot feed backwards to save it |
+| `THERMAL_UPSIDE_DOWN` | `false` | Print jobs upside down unless a request sets `upside_down` (see [Upside down](#upside-down)) |
 
 `ESCPOS_CONNECTION` is an [`escpos.Open`](https://github.com/connordoman/escpos#connection-strings-and-reconnecting) connection string:
 
@@ -152,8 +153,25 @@ Every print endpoint takes the body as-is (no form encoding) and these query par
 | `open_drawer`, `beep` | `false`   | Kick the cash drawer or beep after printing                                         |
 | `wait`                |           | Wait up to this long (e.g. `30s`, max `5m`) for the job to finish before responding |
 | `dry_run`             | `false`   | Return the rendered ESC/POS bytes instead of queueing them                          |
+| `upside_down` | from `THERMAL_UPSIDE_DOWN` | Print the job turned 180° (not for `/raw`; see [Upside down](#upside-down)) |
 
 A submission returns `202 Accepted` with the job and its queue position, or `200 OK` if `wait` saw it finish (check `job.status`, which may be `failed`). Bad input returns `400` or `422` with an error code, a message and, for documents, the path of each problem.
+
+### Upside down
+
+With `upside_down`, a job reads correctly when the receipt is turned around, for printers mounted upside down or receipts read from the other side of a counter. Thermal uses the printer's own upside-down mode (`ESC {`) in standard mode: the printer turns each line it prints, and Thermal sends the lines last first. Cuts stay where they are, and each part between them is turned on its own. Because it is the printer's own mode, text, alignment, sizes, tables, bar codes and QR codes work as usual, and a job prints in one piece, like any other.
+
+Requests are limited to what that mode can do. The rest is ignored or refused rather than printed wrongly:
+
+| Feature | Upside down |
+| --- | --- |
+| `page` blocks (page mode) | Refused with `422 upside_down_unsupported`; the printer ignores `ESC {` in page mode |
+| `raw` blocks the server does not recognise | Refused with `422 upside_down_unsupported`. `/v1/print/raw` jobs are never turned |
+| Left margins and widths (`marginLeft` and `width` styles, `margins` blocks) | Ignored: everything uses the full width |
+| 90° rotated characters (`rotate(90deg)`, `rotate(270deg)`) | Ignored. `rotate(180deg)` turns the text back upright |
+| Raster images (images, Unicode text, Markdown images) | Turned 180° by Thermal, since the printer does not turn them. Left and right alignment are mirrored so images keep their place |
+
+`GET /v1/printer` reports the server's default as `defaults.upside_down`, so clients can tell what an unset `upside_down` means.
 
 ### `POST /v1/print/text`
 

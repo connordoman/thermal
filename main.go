@@ -129,6 +129,7 @@ func main() {
 		MaxBodyBytes: cfg.Server.MaxBodyBytes,
 		Debug:        cfg.Server.Debug,
 		CutFeed:      cfg.Server.CutFeed,
+		UpsideDown:   cfg.Server.UpsideDown,
 
 		SessionSecure:  cfg.Server.SessionSecure,
 		TrustedOrigins: cfg.Server.TrustedOrigins,

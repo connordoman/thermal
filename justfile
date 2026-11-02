@@ -94,6 +94,34 @@ pi-update:
 pi-logs:
     ssh -t {{pi_host}} 'sudo docker compose --project-directory /opt/thermal logs -f'
 
+# Publish a branch's image and run it on the Pi; `just pi-release` goes back
+pi-branch branch=`git branch --show-current`:
+    #!/usr/bin/env sh
+    set -eu
+    test "{{branch}}" != main || { echo "main is the edge channel: just pi-channel edge" >&2; exit 1; }
+    test -z "$(git status --porcelain)" || { echo "commit your changes first" >&2; exit 1; }
+    GOWORK=off go build -o /dev/null . # CI has no ../escpos
+    git push origin "{{branch}}"
+    gh workflow run image.yaml --ref "{{branch}}"
+    sleep 5 # let the run appear
+    run=$(gh run list --workflow image.yaml --branch "{{branch}}" --event workflow_dispatch --limit 1 --json databaseId --jq '.[0].databaseId')
+    gh run watch "$run" --exit-status
+    just pi-channel "branch-$(echo "{{branch}}" | tr '/' '-')"
+
+# Go back to tagged releases
+pi-release: (pi-channel "latest")
+
+# Point the Pi at an image tag (latest, edge, 0.3.0, branch-...) and update now
+pi-channel tag:
+    ssh -t {{pi_host}} 'cd /opt/thermal && \
+      if sudo grep -q "^THERMAL_TAG=" .env; then sudo sed -i "s/^THERMAL_TAG=.*/THERMAL_TAG={{tag}}/" .env; else echo "THERMAL_TAG={{tag}}" | sudo tee -a .env >/dev/null; fi && \
+      sudo systemctl start thermal-update && sudo grep "^THERMAL_TAG=" .env'
+    @just pi-version
+
+# Show which channel the Pi follows (THERMAL_TAG)
+pi-channel-show:
+    @ssh {{pi_host}} 'sudo grep "^THERMAL_TAG=" /opt/thermal/.env'
+
 # Copy a binary to the Pi and restart its systemd service (without Docker)
 deploy-pi: build-pi
     scp bin/thermal-linux-{{pi_arch}} {{pi_host}}:/tmp/thermal
